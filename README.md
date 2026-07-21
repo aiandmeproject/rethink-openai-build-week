@@ -8,6 +8,11 @@ Rethink is a routed reasoning architecture for managing uncertainty over the lif
 
 > Do not optimize branches before validating the trunk.
 
+## Project Links
+
+- **OpenAI Build Week Submission:** [View Rethink on Devpost]([YOUR-DEVPOST-URL](https://devpost.com/software/rethink-1jx9f2))
+- **Demo Video:** [Watch the Rethink Demo on YouTube]([YOUR-YOUTUBE-URL](https://www.youtube.com/watch?v=lPCGCD-YetA&t=18s))
+
 ## Quick start
 
 Requirements: Node.js 20 or newer. The project has no runtime package dependencies.
