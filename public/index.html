@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Rethink identifies the uncertainty that matters most, then chooses the reasoning method best suited to reduce it." />
+    <title>Rethink — Answer the right question first</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Rethink home">
+          <span class="brand-mark" aria-hidden="true">R</span>
+          <span>Rethink</span>
+        </a>
+        <p class="doctrine">Trunk before branches.</p>
+        <div class="topbar-actions">
+          <span id="runtimeBadge" class="runtime-badge demo">Demo Mode</span>
+          <button id="importProjectButton" class="text-button" type="button">Import Project Backup</button>
+          <input id="projectImportInput" type="file" accept="application/json,.json" hidden />
+          <button id="newProjectButton" class="text-button" type="button">New project</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="captureSection" class="capture-section" aria-labelledby="captureTitle">
+          <div class="capture-copy">
+            <p class="eyebrow">Routed reasoning for uncertain work</p>
+            <h1 id="captureTitle">Answer the question that changes what happens next.</h1>
+            <p class="lede">Most AI systems answer the question you ask. Rethink first determines whether that is the question you should be answering.</p>
+          </div>
+
+          <div class="capture-card">
+            <label for="problemInput">What are you trying to figure out?</label>
+            <textarea id="problemInput" rows="5" placeholder="Paste the messy idea, problem, project, or opportunity—unfinished thinking is welcome."></textarea>
+            <div class="capture-options">
+              <fieldset class="mode-switch" aria-label="Runtime mode">
+                <legend>Reasoning source</legend>
+                <label>
+                  <input type="radio" name="mode" value="demo" checked />
+                  <span><strong>Demo</strong><small>Deterministic, no key</small></span>
+                </label>
+                <label id="liveModeLabel">
+                  <input id="liveModeInput" type="radio" name="mode" value="live" />
+                  <span><strong>Live GPT-5.6</strong><small id="liveModeHint">Checking availability…</small></span>
+                </label>
+              </fieldset>
+              <button id="sampleButton" class="sample-button" type="button">Use sample problem</button>
+            </div>
+            <div class="capture-submit">
+              <p id="captureHint">One cycle at a time. Every decision stays visible.</p>
+              <button id="runRethinkButton" class="primary-button" type="button">
+                <span>Run Rethink</span><span aria-hidden="true">→</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section id="workspace" class="workspace" hidden aria-label="Rethink project workspace">
+          <div class="workspace-heading">
+            <div>
+              <p id="projectKicker" class="eyebrow">Current project state</p>
+              <h2 id="projectTitle">Untitled project</h2>
+            </div>
+            <div class="cycle-stamp">
+              <span>Cycle</span>
+              <strong id="cycleNumber">0</strong>
+              <small id="projectLifecycle">Active · Continue</small>
+            </div>
+          </div>
+
+          <nav class="pec-rail" aria-label="Project Execution Checklist phases">
+            <ol id="pecRail"></ol>
+          </nav>
+
+          <div class="workspace-grid">
+            <div class="main-column">
+              <section class="project-state-card panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="section-number">01 / Project state</p>
+                    <h3>What we currently believe</h3>
+                  </div>
+                  <span id="phaseBadge" class="phase-badge">Capture</span>
+                </div>
+                <p id="problemDefinition" class="problem-definition"></p>
+                <div class="state-meta" role="group" aria-label="Inspect and manage project state">
+                  <button class="state-counter" type="button" data-state-panel="assumptions" aria-label="Inspect and edit assumptions">
+                    <span>Open assumptions<small>Inspect · edit · trace</small></span>
+                    <strong id="assumptionCount">0</strong>
+                  </button>
+                  <button class="state-counter" type="button" data-state-panel="evidence" aria-label="Inspect and edit evidence">
+                    <span>Evidence items<small>Sources · links · trace</small></span>
+                    <strong id="evidenceCount">0</strong>
+                  </button>
+                  <button class="state-counter" type="button" data-state-panel="locks" aria-label="Inspect and manage locked versions">
+                    <span>Locked versions<small>Inspect · compare · reopen</small></span>
+                    <strong id="lockCount">0</strong>
+                  </button>
+                </div>
+                <div id="workspaceResume" class="workspace-resume" hidden>
+                  <div>
+                    <strong>Ready to reassess the project</strong>
+                    <p>STM will use only this project's current state, evidence, locks, and history.</p>
+                  </div>
+                  <button id="resumeRethinkButton" class="primary-button" type="button">Run Rethink</button>
+                </div>
+              </section>
+
+              <section id="routingPanel" class="routing-panel panel" hidden>
+                <div class="panel-heading">
+                  <div>
+                    <p id="routingContextLabel" class="section-number">02 / STM priority</p>
+                    <h3>Highest-leverage unanswered question</h3>
+                  </div>
+                  <span class="leverage-mark">Highest leverage</span>
+                </div>
+                <blockquote id="highestLeverageQuestion"></blockquote>
+
+                <div class="route-decision">
+                  <div class="method-lockup">
+                    <span>Recommended method</span>
+                    <strong id="selectedMethod">DEFINE</strong>
+                    <em id="overrideBadge" hidden>User override recorded</em>
+                  </div>
+                  <div class="route-rationale">
+                    <div>
+                      <span>Why this question now</span>
+                      <p id="whyQuestionNow"></p>
+                    </div>
+                    <div>
+                      <span>Why this method</span>
+                      <p id="whyMethod"></p>
+                    </div>
+                    <div>
+                      <span>What would resolve it</span>
+                      <p id="resolutionCriteria"></p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="evidence-gate-card" aria-live="polite">
+                  <div>
+                    <span>Evidence gate</span>
+                    <strong id="evidenceGateBadge">Use existing evidence</strong>
+                  </div>
+                  <p id="evidenceStateSummary"></p>
+                </div>
+
+                <div id="routingBlocker" class="routing-blocker" hidden></div>
+
+                <details class="evidence-needed">
+                  <summary>Evidence Rethink would look for</summary>
+                  <ul id="evidenceNeeded"></ul>
+                </details>
+
+                <div id="routeWhy" class="route-why" hidden>
+                  <strong>Why not answer the original prompt directly?</strong>
+                  <p>Because the selected uncertainty controls more downstream decisions. Rethink reduces that uncertainty before spending effort on dependent branches.</p>
+                </div>
+
+                <div class="route-actions">
+                  <button id="runMethodButton" class="primary-button" type="button">Run Define</button>
+                  <button id="chooseMethodButton" class="secondary-button" type="button">Choose another method</button>
+                  <button id="askWhyButton" class="text-button" type="button">Ask why</button>
+                </div>
+
+                <form id="methodChooser" class="method-chooser" hidden>
+                  <label for="methodSelect">Override the recommended route</label>
+                  <div>
+                    <select id="methodSelect"></select>
+                    <button class="secondary-button" type="submit">Use this method</button>
+                  </div>
+                  <p>The override and original recommendation will both be recorded in the Lab Notebook.</p>
+                </form>
+              </section>
+
+              <section id="reasoningProgressPanel" class="research-progress-panel panel" hidden aria-live="polite">
+                <div class="panel-heading">
+                  <div>
+                    <p class="section-number">Live reasoning execution</p>
+                    <h3 id="reasoningProgressTitle">Preparing a recoverable reasoning cycle</h3>
+                  </div>
+                  <span id="reasoningProgressBadge" class="source-badge">Pending</span>
+                </div>
+                <p id="reasoningProgressMessage">Project state will not advance until a complete, schema-valid cycle result is available.</p>
+                <dl class="research-scope">
+                  <dt>Method</dt><dd id="reasoningProgressMethod">Not selected</dd>
+                  <dt>Execution status</dt><dd id="reasoningExecutionStatus">Request not accepted</dd>
+                  <dt>Response ID</dt><dd id="reasoningResponseId">Not yet assigned</dd>
+                </dl>
+                <div class="route-actions">
+                  <button id="checkReasoningButton" class="secondary-button" type="button" hidden>Resume / Check Status</button>
+                  <button id="retryReasoningButton" class="secondary-button" type="button" hidden>Retry Safely</button>
+                </div>
+                <p id="reasoningProgressError" class="routing-blocker" hidden></p>
+              </section>
+
+              <section id="researchProgressPanel" class="research-progress-panel panel" hidden aria-live="polite">
+                <div class="panel-heading">
+                  <div>
+                    <p class="section-number">Live public research</p>
+                    <h3 id="researchProgressTitle">Preparing bounded research</h3>
+                  </div>
+                  <span id="researchProgressBadge" class="source-badge">Pending</span>
+                </div>
+                <p id="researchProgressMessage">Project state remains available while OpenAI searches and evaluates sources.</p>
+                <dl class="research-scope">
+                  <dt>Execution status</dt><dd id="researchExecutionStatus">Pending</dd>
+                  <dt>Evidence outcome</dt><dd id="researchEvidenceOutcome">Not evaluated</dd>
+                  <dt>Supporting search</dt><dd id="researchSupportingScope"></dd>
+                  <dt>Disconfirming search</dt><dd id="researchDisconfirmingScope"></dd>
+                </dl>
+                <div class="route-actions">
+                  <button id="retryResearchButton" class="secondary-button" type="button" hidden>Retry safely</button>
+                  <button id="viewResearchErrorButton" class="text-button" type="button" hidden>View Error Log</button>
+                  <button id="proceedWithoutResearchButton" class="secondary-button" type="button" hidden>Proceed Without Research</button>
+                  <button id="reassessResearchButton" class="secondary-button" type="button" hidden>Continue / Reassess</button>
+                  <button id="differentScopeButton" class="text-button" type="button" hidden>Search Again with Different Scope</button>
+                  <button id="proceedInconclusiveButton" class="text-button" type="button" hidden>Proceed Under Uncertainty</button>
+                  <button id="routeHumanResearchButton" class="text-button" type="button" hidden>Route to Human / Real-World Evidence</button>
+                  <button id="refreshResearchButton" class="text-button" type="button">Check now</button>
+                </div>
+                <form id="researchScopeForm" class="research-scope-form" hidden>
+                  <label for="supportingScopeInput">Revised supporting search</label>
+                  <textarea id="supportingScopeInput" rows="2"></textarea>
+                  <label for="disconfirmingScopeInput">Revised disconfirming search</label>
+                  <textarea id="disconfirmingScopeInput" rows="2"></textarea>
+                  <div class="route-actions">
+                    <button class="secondary-button" type="submit">Run revised bounded search</button>
+                    <button id="cancelScopeEditButton" class="text-button" type="button">Cancel</button>
+                  </div>
+                </form>
+                <form id="researchDecisionForm" class="research-scope-form" hidden>
+                  <h4 id="researchDecisionTitle">Proceed with an unresolved evidence gap</h4>
+                  <p id="researchDecisionHelp">State why proceeding is appropriate. The unresolved question and technical outcome will remain in project history.</p>
+                  <label for="researchDecisionRationale">Required rationale</label>
+                  <textarea id="researchDecisionRationale" rows="3" required></textarea>
+                  <div class="route-actions">
+                    <button class="secondary-button" type="submit">Record decision and continue</button>
+                    <button id="cancelResearchDecisionButton" class="text-button" type="button">Cancel</button>
+                  </div>
+                </form>
+                <section id="researchErrorLog" class="research-error-log" hidden aria-label="Research error log">
+                  <div class="panel-heading compact-heading">
+                    <h4>Research error log</h4>
+                    <button id="copyResearchErrorButton" class="text-button" type="button">Copy technical error</button>
+                  </div>
+                  <dl class="research-scope">
+                    <dt>Timestamp</dt><dd id="researchErrorTimestamp"></dd>
+                    <dt>Job ID / status</dt><dd id="researchErrorJob"></dd>
+                    <dt>Summary</dt><dd id="researchErrorSummary"></dd>
+                    <dt>Error code</dt><dd id="researchErrorCode"></dd>
+                    <dt>Processing stage</dt><dd id="researchErrorStage"></dd>
+                    <dt>Token budget</dt><dd id="researchErrorTokenBudget"></dd>
+                    <dt>Native citations</dt><dd id="researchErrorCitationCount"></dd>
+                    <dt>Submitted Evidence Items</dt><dd id="researchErrorEvidenceCount"></dd>
+                    <dt>Retry attempts</dt><dd id="researchErrorRetries"></dd>
+                    <dt>Current state</dt><dd id="researchErrorState"></dd>
+                  </dl>
+                  <div id="researchCitationFailures" hidden>
+                    <strong>Affected Evidence Items</strong>
+                    <ul id="researchCitationFailureList"></ul>
+                  </div>
+                  <label for="researchTechnicalError">Copyable technical error</label>
+                  <textarea id="researchTechnicalError" rows="5" readonly></textarea>
+                  <p>No API keys, authorization headers, or secrets are stored in this log.</p>
+                </section>
+              </section>
+
+              <section id="resultPanel" class="result-panel panel" hidden>
+                <div class="panel-heading">
+                  <div>
+                    <p class="section-number">03 / Cycle result</p>
+                    <h3>What changed after reasoning</h3>
+                  </div>
+                  <span id="sourceBadge" class="source-badge">Model reasoning</span>
+                </div>
+
+                <div class="conclusion-block">
+                  <span>Conclusion</span>
+                  <p id="reasoningConclusion"></p>
+                </div>
+
+                <div class="result-grid">
+                  <section>
+                    <h4>What was learned</h4>
+                    <ul id="learnedList"></ul>
+                  </section>
+                  <section>
+                    <h4>State change</h4>
+                    <ul id="stateChangesList"></ul>
+                  </section>
+                  <section>
+                    <h4>Remaining uncertainty</h4>
+                    <ul id="uncertaintyList"></ul>
+                  </section>
+                </div>
+
+                <section id="evidenceEvaluationSection" class="evidence-evaluation" hidden>
+                  <div class="panel-heading compact">
+                    <div>
+                      <p class="section-number">Evidence trace</p>
+                      <h4 id="evidenceThresholdSummary">Evidence evaluated</h4>
+                    </div>
+                    <span id="evidenceThresholdBadge" class="record-status">Not met</span>
+                  </div>
+                  <p id="evidenceThresholdRationale"></p>
+                  <div class="validation-status-grid">
+                    <div><span>Validation process</span><strong id="validationProcessStatus">Not completed</strong></div>
+                    <div><span>Proposition status</span><strong id="propositionStatus">Unresolved</strong></div>
+                  </div>
+                  <p id="propositionStatusRationale"></p>
+                  <ul id="evidenceConsideredList"></ul>
+                  <div id="disconfirmationBlock" class="disconfirmation-block" hidden>
+                    <strong id="disconfirmationFlag">Disconfirmation search</strong>
+                    <dl>
+                      <dt>Strongest support</dt><dd id="strongestSupport"></dd>
+                      <dt>Strongest contradiction</dt><dd id="strongestContradiction"></dd>
+                      <dt>Strongest limitation</dt><dd id="strongestLimitation"></dd>
+                      <dt>Would change the conclusion</dt><dd id="conclusionChanger"></dd>
+                    </dl>
+                  </div>
+                  <div id="evidenceGapsBlock" hidden>
+                    <strong>Unresolved evidence gaps</strong>
+                    <ul id="evidenceGapsList"></ul>
+                  </div>
+                </section>
+
+                <section id="citationsSection" class="citations-section" hidden>
+                  <h4>External evidence</h4>
+                  <ul id="citationsList"></ul>
+                </section>
+
+                <div class="next-action-card">
+                  <div>
+                    <span>Disposition</span>
+                    <strong id="disposition">CONTINUE</strong>
+                  </div>
+                  <div>
+                    <span>Highest-leverage next action</span>
+                    <p id="nextAction"></p>
+                    <small id="nextActionWhy"></small>
+                  </div>
+                </div>
+
+                <button id="nextCycleButton" class="primary-button next-cycle-button" type="button">Run Next Cycle →</button>
+              </section>
+
+              <section id="humanGatePanel" class="human-gate-panel panel" hidden>
+                <p class="section-number">Human / real-world gate</p>
+                <h3 id="humanGateQuestion">Human input is required</h3>
+                <p id="humanGateRequired"></p>
+                <p id="humanGateWhy"></p>
+                <div class="route-actions">
+                  <button id="resolveHumanGateButton" class="primary-button" type="button">Resolve Human Gate</button>
+                  <button id="gateAddEvidenceButton" class="secondary-button" type="button">Add Evidence</button>
+                </div>
+              </section>
+
+              <section id="reportPanel" class="report-panel panel" hidden>
+                <div class="panel-heading">
+                  <div><p class="section-number">Professional project report</p><h3>Decision-ready evidence summary</h3></div>
+                  <div class="notebook-export-actions">
+                    <button id="downloadReportButton" class="text-button" type="button">Download Final Report</button>
+                    <button id="downloadReportJsonButton" class="text-button" type="button">Download Report JSON</button>
+                  </div>
+                </div>
+                <div id="reportContent"></div>
+              </section>
+            </div>
+
+            <aside class="side-column">
+              <section class="quick-actions panel">
+                <p class="section-number">Direct operators</p>
+                <h3>Override the route</h3>
+                <p>Run a specific method when your context should overrule the recommendation.</p>
+                <div class="operator-grid">
+                  <button type="button" data-method="VALIDATE"><span>Validate</span><small>Is it true?</small></button>
+                  <button type="button" data-method="STRESS_TEST"><span>Stress-Test</span><small>Where does it break?</small></button>
+                  <button type="button" data-method="SIMPLIFY"><span>Clean It Up</span><small>What can go?</small></button>
+                  <button id="lockButton" type="button"><span>Lock It In</span><small>Make this canonical</small></button>
+                </div>
+              </section>
+
+              <section class="human-authority panel">
+                <p class="section-number">Human authority</p>
+                <h3>You retain final judgment</h3>
+                <p>Control PEC progression or record a disposition without erasing unresolved evidence.</p>
+                <div class="authority-actions">
+                  <button id="stageOverrideButton" class="secondary-button" type="button">Stage control</button>
+                  <button id="finalJudgmentButton" class="secondary-button" type="button">Final judgment</button>
+                </div>
+              </section>
+
+              <section class="notebook panel">
+                <div class="panel-heading compact">
+                  <div>
+                    <p class="section-number">Lab Notebook</p>
+                    <h3>How the thinking evolved</h3>
+                  </div>
+                  <div class="notebook-export-actions">
+                    <button id="generateReportButton" class="text-button" type="button">Final report</button>
+                    <button id="exportNotebookButton" class="text-button" type="button">Notebook JSON</button>
+                    <button id="exportButton" class="text-button" type="button">Export Project Backup</button>
+                  </div>
+                </div>
+                <div id="notebookEmpty" class="notebook-empty">
+                  <span>00</span>
+                  <p>The first completed method will create a cycle record here.</p>
+                </div>
+                <ol id="notebookList" class="notebook-list"></ol>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>Rethink v0.1 · PEC state → STM question → Routed method → Evidence → State change → Disposition</p>
+      </footer>
+    </div>
+
+    <nav id="stateDock" class="state-dock" hidden aria-label="Persistent project state controls">
+      <button type="button" data-state-panel="assumptions" aria-label="Open assumptions panel">
+        <span>A</span><strong id="dockAssumptionCount">0</strong><small>Assumptions</small>
+      </button>
+      <button type="button" data-state-panel="evidence" aria-label="Open evidence panel">
+        <span>E</span><strong id="dockEvidenceCount">0</strong><small>Evidence</small>
+      </button>
+      <button type="button" data-state-panel="locks" aria-label="Open locked versions panel">
+        <span>L</span><strong id="dockLockCount">0</strong><small>Versions</small>
+      </button>
+    </nav>
+
+    <div id="stateDrawerBackdrop" class="state-drawer-backdrop" hidden></div>
+    <aside id="stateDrawer" class="state-drawer" role="dialog" aria-modal="true" aria-labelledby="stateDrawerTitle" hidden>
+      <header class="state-drawer-header">
+        <div>
+          <p class="section-number">Canonical project state</p>
+          <h2 id="stateDrawerTitle">Open Assumptions</h2>
+          <p id="stateDrawerSubtitle">Inspect the claims that currently shape the project.</p>
+        </div>
+        <button id="closeStateDrawerButton" class="drawer-close" type="button" aria-label="Close project state panel">×</button>
+      </header>
+      <nav class="state-drawer-tabs" aria-label="Project state data types">
+        <button type="button" data-state-panel="assumptions">Assumptions <strong id="tabAssumptionCount">0</strong></button>
+        <button type="button" data-state-panel="evidence">Evidence <strong id="tabEvidenceCount">0</strong></button>
+        <button type="button" data-state-panel="locks">Versions <strong id="tabLockCount">0</strong></button>
+        <button type="button" data-state-panel="human">Human gates <strong id="tabHumanGateCount">0</strong></button>
+        <button type="button" data-state-panel="authority">Authority</button>
+      </nav>
+      <div class="state-drawer-toolbar">
+        <p id="statePanelSummary"></p>
+        <button id="addStateItemButton" class="secondary-button" type="button">Add assumption</button>
+      </div>
+      <div id="statePanelEditor" class="state-panel-editor" hidden></div>
+      <div id="statePanelContent" class="state-panel-content"></div>
+    </aside>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/app.js?v=0.5.0"></script>
+  </body>
+</html>

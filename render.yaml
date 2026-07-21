@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: rethink-core
+    runtime: docker
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_MODEL
+        value: gpt-5.6-sol
+      - key: OPENAI_REASONING_EFFORT
+        value: medium
+      - key: OPENAI_API_KEY
+        sync: false

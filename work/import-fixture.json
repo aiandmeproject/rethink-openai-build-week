@@ -1,0 +1,30 @@
+{
+  "format": "rethink.project.backup",
+  "formatVersion": 1,
+  "exportedAt": "2026-07-18T18:00:00.000Z",
+  "projectId": "project_import_acceptance",
+  "project": {
+    "id": "project_import_acceptance",
+    "contextBoundaryVersion": 2,
+    "title": "Imported productization acceptance project",
+    "originalInput": "Verify that a portable Rethink project backup restores an isolated project state.",
+    "problemDefinition": "Verify that a portable Rethink project backup restores an isolated project state.",
+    "lifecycleStatus": "ACTIVE",
+    "currentDisposition": "CONTINUE",
+    "pecPhase": { "index": 0, "id": "CAPTURE", "label": "Capture" },
+    "cycle": 0,
+    "assumptions": [],
+    "evidence": [],
+    "lockedDecisions": [],
+    "tangents": [],
+    "notebook": [],
+    "stateEvents": [],
+    "humanGates": [],
+    "humanDecisions": [],
+    "stageOverrides": [],
+    "lineage": { "parentProjectId": "", "sourceTangentId": "", "explicitImports": [] },
+    "importHistory": [],
+    "createdAt": "2026-07-18T18:00:00.000Z",
+    "updatedAt": "2026-07-18T18:00:00.000Z"
+  }
+}

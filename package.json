@@ -1,0 +1,18 @@
+{
+  "name": "rethink-build-week",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Routed reasoning architecture for managing uncertainty over the life of a problem.",
+  "scripts": {
+    "start": "node server.js",
+    "start:production": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "smoke": "node scripts/smoke.js",
+    "verify": "node --test && node scripts/smoke.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
