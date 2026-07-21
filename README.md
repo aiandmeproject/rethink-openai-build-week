@@ -10,8 +10,8 @@ Rethink is a routed reasoning architecture for managing uncertainty over the lif
 
 ## Project Links
 
-- **OpenAI Build Week Submission:** [View Rethink on Devpost]([YOUR-DEVPOST-URL](https://devpost.com/software/rethink-1jx9f2))
-- **Demo Video:** [Watch the Rethink Demo on YouTube]([YOUR-YOUTUBE-URL](https://www.youtube.com/watch?v=lPCGCD-YetA&t=18s))
+- **OpenAI Build Week Submission:** [View Rethink on Devpost]([https://devpost.com/software/rethink-1jx9f2})
+- **Demo Video:** [Watch the Rethink Demo on YouTube]([https://www.youtube.com/watch?v=lPCGCD-YetA&t=18s})
 
 ## Quick start
 
