@@ -50,6 +50,22 @@ The live integration uses:
 
 The request shapes follow OpenAI's current [GPT-5.6 Sol model page](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs), [web search guide](https://developers.openai.com/api/docs/guides/tools-web-search), and [background mode guide](https://developers.openai.com/api/docs/guides/background).
 
+## How I Used Codex
+
+Codex served as my engineering partner throughout OpenAI Build Week 2026.
+
+I used Codex to turn the Rethink framework into a working application, including:
+
+- the reasoning engine and method routing
+- evidence classification and traceability
+- live GPT-5.6 research and citation handling
+- background execution and recovery
+- project persistence and backup/restore
+- report generation
+- automated testing and regression fixes
+
+My role was to define the product logic, reasoning architecture, test scenarios, acceptance criteria, and system behavior. Codex accelerated implementation, debugging, refactoring, and test coverage while I continuously evaluated whether the system was behaving according to the Rethink framework.
+
 ## What to test
 
 The fastest judge path is:
