@@ -3,6 +3,7 @@ export const PROJECT_REPOSITORY_CONTRACT_VERSION = 1;
 const DEFAULT_KEY = "rethink.workspace.v0.1";
 const LEGACY_KEY = "rethink.project.v0.1";
 const LEGACY_DOMAIN_PROFILE = Object.freeze({ id: "BUSINESS", version: "1.0.0" });
+const EMPTY_CLAIM_LEDGER = Object.freeze({ version: 1, claims: [], evidenceRelationships: [] });
 
 export function hydrateLocalProjectSession(session) {
   if (!session?.state?.id) return null;
@@ -11,7 +12,12 @@ export function hydrateLocalProjectSession(session) {
     state: {
       ...session.state,
       domainProfile: session.state.domainProfile ?? LEGACY_DOMAIN_PROFILE.id,
-      domainProfileVersion: session.state.domainProfileVersion ?? LEGACY_DOMAIN_PROFILE.version
+      domainProfileVersion: session.state.domainProfileVersion ?? LEGACY_DOMAIN_PROFILE.version,
+      claimLedger: session.state.claimLedger ?? {
+        ...EMPTY_CLAIM_LEDGER,
+        claims: [],
+        evidenceRelationships: []
+      }
     }
   };
 }

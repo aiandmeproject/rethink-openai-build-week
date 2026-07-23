@@ -180,6 +180,76 @@ test("HTTP state management persists linked edits and rejects untraced changes",
   });
 });
 
+test("HTTP state management creates claims and canonical evidence relationships without breaking input-only project creation", async () => {
+  await withServer(async (baseUrl) => {
+    const created = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "A material workflow claim needs explicit evidence relationships." })
+    }).then((response) => response.json());
+    assert.deepEqual(created.state.claimLedger, { version: 1, claims: [], evidenceRelationships: [] });
+
+    const evidence = await fetch(`${baseUrl}/api/rethink/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state: created.state,
+        operation: {
+          type: "UPSERT_EVIDENCE",
+          reason: "Observed evidence for the HTTP Claim Ledger contract.",
+          item: {
+            claim: "A bounded observation bears on the workflow claim.",
+            intakeType: "TEST_RESULT",
+            provenanceOrigin: "USER_INPUT",
+            reliability: "MODERATE",
+            relationship: "NONE_UNLINKED",
+            assessment: "HTTP contract fixture.",
+            assumptionIds: [],
+            questionRefs: []
+          }
+        }
+      })
+    }).then((response) => response.json());
+    const claimResponse = await fetch(`${baseUrl}/api/rethink/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state: evidence.state,
+        operation: {
+          type: "UPSERT_CLAIM",
+          reason: "Created through the existing Core state-management boundary.",
+          item: { text: "The workflow delay is material.", status: "UNKNOWN" }
+        }
+      })
+    });
+    assert.equal(claimResponse.status, 200);
+    const claim = await claimResponse.json();
+    const linkResponse = await fetch(`${baseUrl}/api/rethink/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state: claim.state,
+        operation: {
+          type: "UPSERT_CLAIM_EVIDENCE_RELATIONSHIP",
+          reason: "Linked through the canonical state reducer.",
+          item: {
+            claimId: claim.claim.id,
+            evidenceId: claim.state.evidence[0].id,
+            relationship: "SUPPORTS"
+          }
+        }
+      })
+    });
+    assert.equal(linkResponse.status, 200);
+    const linked = await linkResponse.json();
+    assert.equal(linked.state.claimLedger.claims.length, 1);
+    assert.equal(linked.state.claimLedger.evidenceRelationships.length, 1);
+    assert.equal(linked.state.claimLedger.claims[0].status, "UNKNOWN");
+    assert.equal(linked.state.claimLedger.evidenceRelationships[0].relationship, "SUPPORTS");
+    assert.equal(linked.state.stateEvents.at(-1).entityType, "CLAIM_EVIDENCE_RELATIONSHIP");
+  });
+});
+
 test("static application is served", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(baseUrl);

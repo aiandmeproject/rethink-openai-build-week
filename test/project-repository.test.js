@@ -22,7 +22,8 @@ test("device-local repository persists and clears an isolated project session", 
   assert.deepEqual(repository.loadSession().state, {
     ...session.state,
     domainProfile: "BUSINESS",
-    domainProfileVersion: "1.0.0"
+    domainProfileVersion: "1.0.0",
+    claimLedger: { version: 1, claims: [], evidenceRelationships: [] }
   });
   repository.clearSession();
   assert.equal(repository.loadSession(), null);
@@ -36,6 +37,7 @@ test("device-local repository migrates the legacy single-project key", () => {
   assert.equal(repository.loadSession().state.id, "legacy_project");
   assert.equal(repository.loadSession().state.domainProfile, "BUSINESS");
   assert.equal(repository.loadSession().state.domainProfileVersion, "1.0.0");
+  assert.deepEqual(repository.loadSession().state.claimLedger, { version: 1, claims: [], evidenceRelationships: [] });
   assert.equal(storage.has("rethink.project.v0.1"), false);
   assert.equal(storage.has("rethink.workspace.v0.1"), true);
 });
@@ -49,7 +51,45 @@ test("version 2 backup restores a complete project across independent browser or
   const runtime = createRuntime({ apiKey: "" });
   const originA = createLocalProjectRepository(memoryStorage());
   const originB = createLocalProjectRepository(memoryStorage());
-  const state = runtime.initialize("A portable project must retain its complete isolated reasoning history.");
+  let state = runtime.initialize("A portable project must retain its complete isolated reasoning history.");
+  state = runtime.manageState({
+    state,
+    operation: {
+      type: "UPSERT_EVIDENCE",
+      reason: "Portable evidence relationship coverage.",
+      item: {
+        claim: "A recorded observation bears on a portable explicit claim.",
+        intakeType: "TEST_RESULT",
+        provenanceOrigin: "USER_INPUT",
+        reliability: "MODERATE",
+        relationship: "NONE_UNLINKED",
+        assessment: "Used to verify v2 portability.",
+        assumptionIds: [],
+        questionRefs: []
+      }
+    }
+  }).state;
+  const claimResult = runtime.manageState({
+    state,
+    operation: {
+      type: "UPSERT_CLAIM",
+      reason: "Portable claim coverage.",
+      item: { text: "The observed condition is material." }
+    }
+  });
+  state = claimResult.state;
+  state = runtime.manageState({
+    state,
+    operation: {
+      type: "UPSERT_CLAIM_EVIDENCE_RELATIONSHIP",
+      reason: "Portable relationship coverage.",
+      item: {
+        claimId: claimResult.claim.id,
+        evidenceId: state.evidence[0].id,
+        relationship: "SUPPORTS"
+      }
+    }
+  }).state;
   const routed = await runtime.route({ state, mode: "demo" });
   const completed = await runtime.cycle({ state, routing: routed.routing, mode: "demo" });
   const legacyProject = structuredClone(completed.state);
@@ -84,6 +124,9 @@ test("version 2 backup restores a complete project across independent browser or
   assert.equal(restored.state.cycle, completed.state.cycle);
   assert.deepEqual(restored.state.assumptions, completed.state.assumptions);
   assert.deepEqual(restored.state.evidence, completed.state.evidence);
+  assert.deepEqual(restored.state.claimLedger, completed.state.claimLedger);
+  assert.equal(restored.state.claimLedger.claims.length, 1);
+  assert.equal(restored.state.claimLedger.evidenceRelationships.length, 1);
   assert.deepEqual(restored.state.questions, completed.state.questions);
   assert.equal(restored.state.notebook.length, completed.state.notebook.length);
   assert.equal(restored.state.domainProfile, "BUSINESS");

@@ -12,7 +12,7 @@ The system may move PEC backward or forward when evidence changes the project. I
 
 ## Rethink Engine layering
 
-Rethink Engine is the complete platform. Rethink Core is the shared domain-independent reasoning, evidence, uncertainty, integrity, and decision foundation. A Domain Profile is a versioned overlay that can add domain terminology, modules, and safeguards without copying PEC, STM, the Evidence Registry, reducers, the Lab Notebook, or the reasoning engine.
+Rethink Engine is the complete platform. Rethink Core is the shared domain-independent reasoning, Claim Ledger, evidence, uncertainty, integrity, and decision foundation. A Domain Profile is a versioned overlay that can add domain terminology, modules, and safeguards without copying PEC, STM, the Claim Ledger, the Evidence Registry, reducers, the Lab Notebook, or the reasoning engine.
 
 `rethink-domain-profiles.js` is the build-time profile registry. Branch 1 registers:
 
@@ -46,7 +46,7 @@ PEC answers: **Where are we in the project?**
 10. Knowledge Capture
 11. Decision
 
-Project state includes the original input, current problem definition, current PEC phase, assumptions with status and confidence, classified evidence, locks, human gates, human decisions, stage overrides, tangents, notebook entries, and cycle metadata.
+Project state includes the original input, current problem definition, current PEC phase, assumptions with status and confidence, a versioned Claim Ledger, classified evidence, canonical evidence-to-claim relationships, locks, human gates, human decisions, stage overrides, tangents, notebook entries, and cycle metadata.
 
 Every state has a unique project ID and context-boundary version. Router and cycle outputs must echo that ID. Prompt compaction includes only that project's original input, structured state, current evidence, locks, manual changes, and notebook entries whose project ID matches. Older entries without an identity are marked `LEGACY_UNVERIFIED`: they remain visible for audit but never enter model context or deterministic route selection.
 
@@ -133,11 +133,21 @@ Collection method is a standardized value plus optional method details. The pers
 
 When a route declares public research, Live Mode requires the hosted search tool. Each factual finding must become a `PUBLIC_SOURCE_FINDING` resolved to an internal citation ID created from native Responses metadata, with links identifying affected assumptions and cycle questions. No search call or missing native source metadata causes a technical fail-closed outcome. A completed, cited bounded search with no applicable structured finding is instead recorded as `NO_RELEVANT_EVIDENCE_FOUND`; it is not treated as a technical failure or as evidence that the proposition is false.
 
+### Core Claim Ledger
+
+`rethink-claims.js` defines the universal versioned Claim Ledger contract. A project begins with an empty ledger; neither initialization nor legacy normalization infers a claim from `originalInput`, `title`, `problemDefinition`, assumptions, or evidence. Existing cycle-level proposition evaluation therefore remains separate and unchanged.
+
+A claim has a stable ID, text, extensible uppercase type, explicit universal status, notes, and created/updated timestamps. Claims, assumptions, and evidence are different records: no reducer automatically converts one into another. Claim status is human-auditable state and is never calculated from the number of supporting or contradicting links.
+
+The ledger stores evidence relationships once in a canonical `evidenceRelationships` collection. Each active relationship references an existing claim and active Evidence Item and records `SUPPORTS`, `CONTRADICTS`, or `LIMITS`. This supports many-to-many and claim-specific meanings without mutable copies inside claims or Evidence Items. Duplicate links are idempotent; changing a relationship preserves its stable ID. Unlinking is soft, and removing evidence retires its active claim relationships while preserving the historical records.
+
+Legacy evidence remains valid under the existing proposition/evidence model but receives no fabricated Claim Ledger link. Claim Ledger state is included in compact project prompts, lock snapshots, reports, notebook exports, project backups, imports, device-local sessions, and resumable v2 backups. Prompt instructions keep claims, assumptions, evidence, and cycle-level proposition status distinct. Full provenance chains, evidence independence, source-chain weighting, evidence capability/scope, and temporal-integrity semantics remain deferred.
+
 ### 6. Lab Notebook and disposition
 
 Every executed method and Lock It In checkpoint creates a notebook entry containing the required before/after state, route, rationale, evidence, changes, remaining uncertainty, next action, disposition, runtime mode, and model metadata.
 
-The notebook is appended, never rewritten by a later cycle. Manual assumption, evidence, and locked-version actions also append a `STATE_EDIT` notebook record and a structured `stateEvents` before/after trace without incrementing the reasoning cycle. A browser repository adapter holds the canonical device-local active session in `localStorage`. Versioned project backup/import and focused Notebook export provide portable records.
+The notebook is appended, never rewritten by a later cycle. Manual claim, claim-evidence relationship, assumption, evidence, and locked-version actions also append a `STATE_EDIT` notebook record and a structured `stateEvents` before/after trace without incrementing the reasoning cycle. A browser repository adapter holds the canonical device-local active session in `localStorage`. Versioned project backup/import and focused Notebook export provide portable records.
 
 The disposition registry also distinguishes `PUBLIC_RESEARCH_REQUIRED` and `HUMAN_REAL_WORLD_INPUT_REQUIRED`, while retaining the legacy `HUMAN_INPUT_REQUIRED` value for old records. Human judgment can record `HOLD`, `STOP`, or `PROCEED_UNDER_UNCERTAINTY` without rewriting the system recommendation.
 
@@ -179,7 +189,7 @@ POST /api/rethink/lock
   current state → immutable checkpoint snapshot + notebook entry
 ```
 
-`POST /api/rethink/state` accepts one reasoned mutation at a time. The reducer validates assumption/evidence links, evidence intake quality, human-gate resolution, human disposition, PEC-stage control, or controlled reopening; synchronizes references; clears stale routing client-side; and appends both a state event and Lab Notebook record.
+`POST /api/rethink/state` accepts one reasoned mutation at a time. The reducer validates claim creation/update, canonical claim-evidence links, assumption/evidence links, evidence intake quality, human-gate resolution, human disposition, PEC-stage control, or controlled reopening; synchronizes references; clears stale routing client-side; and appends both a state event and Lab Notebook record.
 
 `POST /api/projects/import` validates a versioned backup and records an isolated import. The browser renders structured report data into a standalone UTF-8 human report, while Report JSON and the restorable Project Backup remain distinct downloads. `GET /api/modules` exposes safe module metadata to the UI, and `GET /api/health` provides the deployment health check.
 
@@ -251,21 +261,21 @@ Demo Mode never calls external research. Its result includes that limitation and
 
 An open gate creates a persistent structured record and a prominent **Resolve Human Gate** control. Actual evidence or test-result payloads are stored once in the Evidence Registry; the gate resolution references their Evidence Item IDs and records the information/decision needed to close the gate. At least one active, non-synthetic item is required when resolution claims evidence or a real-world test result. Resolution can also provide authorization, unavailability, an uncertainty override, or a forced disposition. Final judgment and stage-level controls require a rationale. The audit record preserves the system recommendation, human decision, unresolved uncertainty, unmet thresholds, known risks, and reopening conditions.
 
-Loop detection compares evidence/assumption/lock/gate/decision/stage signatures across cycles. A public or human gate cannot generate another equivalent Demo cycle, and two equivalent method conclusions with unchanged state are paused. Live public acquisition is the deliberate exception because its next execution can add new evidence.
+Loop detection compares claim/claim-link/evidence/assumption/lock/gate/decision/stage signatures across cycles. A public or human gate cannot generate another equivalent Demo cycle, and two equivalent method conclusions with unchanged state are paused. Live public acquisition is the deliberate exception because its next execution can add new evidence.
 
 ## Tangents and locks
 
 Cycle output can capture a tangent as a minor observation, future investigation, current-project modification, or potential standalone project. The reducer links it to the cycle and leaves the active route unchanged.
 
-Lock It In snapshots the current problem definition, PEC phase, assumptions, and evidence. Locked versions can be inspected and compared against the current canonical state. Reopening never rolls the project backward: it marks the checkpoint reopened and requires a recorded trigger and rationale. Valid triggers include new evidence, a failed critical assumption, an integration conflict, or a demonstrably better version.
+Lock It In snapshots the current problem definition, PEC phase, assumptions, Claim Ledger, and evidence. Locked versions can be inspected and compared against the current canonical state. Reopening never rolls the project backward: it marks the checkpoint reopened and requires a recorded trigger and rationale. Valid triggers include new evidence, a failed critical assumption, an integration conflict, or a demonstrably better version.
 
-Assumptions and evidence are first-class linked records. Active assumptions hold evidence IDs; active evidence holds affected assumption IDs and question references. Explicitly synthetic, simulated, hypothetical, fixture, or acceptance-test findings remain active and traceable but carry `SYNTHETIC_SIMULATED` authenticity and are excluded from real-world validation thresholds, routing evidence counts, and human-gate satisfaction. The reducer owns both sides of every link so browser input cannot create a one-way relationship. Removal is soft: the item and history remain inspectable while active links are cleared.
+Assumptions and evidence remain first-class linked records under the existing bidirectional reducer contract. Active assumptions hold evidence IDs; active evidence holds affected assumption IDs and question references. Claim-evidence links deliberately use a separate single-source-of-truth relationship collection because one Evidence Item may bear differently on multiple claims. Explicitly synthetic, simulated, hypothetical, fixture, or acceptance-test findings remain active and traceable but carry `SYNTHETIC_SIMULATED` authenticity and are excluded from real-world validation thresholds, routing evidence counts, and human-gate satisfaction even when linked to a claim. Removal is soft: the item and history remain inspectable while active links are cleared or retired.
 
 A project also carries lineage fields for a future tangent-to-child-project action. v0.1 only captures and classifies tangents; it does not silently create a project or import data. A future promotion must preserve the parent project/tangent IDs and create a new isolated state.
 
 ## Persistence boundary and future workspace
 
-`public/project-repository.js` is the first persistence interface. The v0.1 adapter exposes load, save, and clear for one active device-local session and migrates the legacy storage key. Project Backup v2 contains the complete normalized project plus safe resumable UI/runtime job envelopes, but never credentials. Import accepts v1 and v2, validates the project, records the event, and restores it under the destination origin. Human-readable Report HTML, Report JSON, and Notebook JSON are intentionally separate from the restorable backup.
+`public/project-repository.js` is the first persistence interface. The v0.1 adapter exposes load, save, and clear for one active device-local session and migrates the legacy storage key. Missing legacy Claim Ledger state hydrates to the versioned empty ledger without claims, links, or timestamps. Project Backup v2 contains the complete normalized project plus safe resumable UI/runtime job envelopes, but never credentials. Import accepts v1 and v2, validates the project and Claim Ledger, records the import event, and restores it under the destination origin. Human-readable Report HTML, Report JSON, and Notebook JSON are intentionally separate from the restorable backup.
 
 The current product is not a multi-project dashboard. A future repository can add create/list/open/archive/resume operations and replace browser storage with durable storage while the reasoning API continues to receive exactly one explicitly authorized project state. Dashboard projections would read project title/status, PEC phase, highest-leverage question, evidence state, disposition, next action, and last activity from those isolated records.
 
