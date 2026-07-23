@@ -19,7 +19,11 @@ test("device-local repository persists and clears an isolated project session", 
   const session = { state: { id: "project_one" }, result: null, routing: null };
   repository.saveSession(session);
   assert.equal(repository.kind, "DEVICE_LOCAL");
-  assert.deepEqual(repository.loadSession().state, session.state);
+  assert.deepEqual(repository.loadSession().state, {
+    ...session.state,
+    domainProfile: "BUSINESS",
+    domainProfileVersion: "1.0.0"
+  });
   repository.clearSession();
   assert.equal(repository.loadSession(), null);
 });
@@ -30,6 +34,8 @@ test("device-local repository migrates the legacy single-project key", () => {
   });
   const repository = createLocalProjectRepository(storage);
   assert.equal(repository.loadSession().state.id, "legacy_project");
+  assert.equal(repository.loadSession().state.domainProfile, "BUSINESS");
+  assert.equal(repository.loadSession().state.domainProfileVersion, "1.0.0");
   assert.equal(storage.has("rethink.project.v0.1"), false);
   assert.equal(storage.has("rethink.workspace.v0.1"), true);
 });
@@ -46,17 +52,24 @@ test("version 2 backup restores a complete project across independent browser or
   const state = runtime.initialize("A portable project must retain its complete isolated reasoning history.");
   const routed = await runtime.route({ state, mode: "demo" });
   const completed = await runtime.cycle({ state, routing: routed.routing, mode: "demo" });
+  const legacyProject = structuredClone(completed.state);
+  delete legacyProject.domainProfile;
+  delete legacyProject.domainProfileVersion;
   const backup = {
     format: "rethink.project.backup",
     formatVersion: 2,
     exportedAt: "2026-07-20T12:00:00.000Z",
     projectId: completed.state.id,
-    project: completed.state,
+    project: legacyProject,
     runtimeSession: {
       routing: routed.routing,
       result: completed.result,
       research: null,
-      reasoning: null,
+      reasoning: {
+        projectId: completed.state.id,
+        status: "PENDING",
+        responseId: "resp_resumable_profile_migration"
+      },
       report: runtime.report({ state: completed.state }),
       mode: "demo"
     }
@@ -73,7 +86,10 @@ test("version 2 backup restores a complete project across independent browser or
   assert.deepEqual(restored.state.evidence, completed.state.evidence);
   assert.deepEqual(restored.state.questions, completed.state.questions);
   assert.equal(restored.state.notebook.length, completed.state.notebook.length);
+  assert.equal(restored.state.domainProfile, "BUSINESS");
+  assert.equal(restored.state.domainProfileVersion, "1.0.0");
   assert.equal(restored.result.cycle, completed.result.cycle);
+  assert.equal(restored.reasoning.responseId, "resp_resumable_profile_migration");
   assert.doesNotMatch(JSON.stringify(backup), /OPENAI_API_KEY|Bearer\s+|\bsk-[A-Za-z0-9_-]{8,}/i);
 
   const nextRoute = await runtime.route({ state: restored.state, mode: "demo" });

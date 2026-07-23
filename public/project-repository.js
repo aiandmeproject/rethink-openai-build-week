@@ -2,6 +2,19 @@ export const PROJECT_REPOSITORY_CONTRACT_VERSION = 1;
 
 const DEFAULT_KEY = "rethink.workspace.v0.1";
 const LEGACY_KEY = "rethink.project.v0.1";
+const LEGACY_DOMAIN_PROFILE = Object.freeze({ id: "BUSINESS", version: "1.0.0" });
+
+export function hydrateLocalProjectSession(session) {
+  if (!session?.state?.id) return null;
+  return {
+    ...session,
+    state: {
+      ...session.state,
+      domainProfile: session.state.domainProfile ?? LEGACY_DOMAIN_PROFILE.id,
+      domainProfileVersion: session.state.domainProfileVersion ?? LEGACY_DOMAIN_PROFILE.version
+    }
+  };
+}
 
 export function createLocalProjectRepository(storage = globalThis.localStorage, { key = DEFAULT_KEY } = {}) {
   if (!storage || typeof storage.getItem !== "function" || typeof storage.setItem !== "function") {
@@ -17,18 +30,20 @@ export function createLocalProjectRepository(storage = globalThis.localStorage, 
       const raw = current || legacy;
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (!parsed?.state?.id) return null;
+      const hydrated = hydrateLocalProjectSession(parsed);
+      if (!hydrated) return null;
       if (!current && legacy) {
-        storage.setItem(key, JSON.stringify({ ...parsed, repositoryContractVersion: PROJECT_REPOSITORY_CONTRACT_VERSION }));
+        storage.setItem(key, JSON.stringify({ ...hydrated, repositoryContractVersion: PROJECT_REPOSITORY_CONTRACT_VERSION }));
         storage.removeItem(LEGACY_KEY);
       }
-      return parsed;
+      return hydrated;
     },
     saveSession(session) {
-      if (!session?.state?.id) throw new TypeError("A session with a project state and project ID is required.");
+      const hydrated = hydrateLocalProjectSession(session);
+      if (!hydrated) throw new TypeError("A session with a project state and project ID is required.");
       storage.setItem(key, JSON.stringify({
         repositoryContractVersion: PROJECT_REPOSITORY_CONTRACT_VERSION,
-        ...session
+        ...hydrated
       }));
     },
     clearSession() {

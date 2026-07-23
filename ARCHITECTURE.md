@@ -10,6 +10,21 @@ The architectural invariant is:
 
 The system may move PEC backward or forward when evidence changes the project. It must never imply that a later phase is permanently complete.
 
+## Rethink Engine layering
+
+Rethink Engine is the complete platform. Rethink Core is the shared domain-independent reasoning, evidence, uncertainty, integrity, and decision foundation. A Domain Profile is a versioned overlay that can add domain terminology, modules, and safeguards without copying PEC, STM, the Evidence Registry, reducers, the Lab Notebook, or the reasoning engine.
+
+`rethink-domain-profiles.js` is the build-time profile registry. Branch 1 registers:
+
+- `BUSINESS` `1.0.0` — active and operational;
+- `GENERAL` `1.0.0` — known, planned, and unavailable;
+- `APPS` `1.0.0` — known, planned, and unavailable;
+- `NEWS` `1.0.0` — known, planned, and unavailable.
+
+Known unavailable profiles fail differently from unknown profile IDs. Only the resolved active profile enters prompt context. BUSINESS is deliberately a minimal overlay over the accepted Build Week behavior; the registry does not implement General, Apps, or News reasoning.
+
+Canonical project state carries `domainProfile` and `domainProfileVersion`. New projects default to BUSINESS. Legacy projects, local sessions, and v1/v2 backups that lack these additive fields normalize to BUSINESS without creating cycles, notebook entries, evidence, or timestamps. Existing profile assignment is preserved through reducers, reports, backups, and imports. Profile switching and profile-version migration are intentionally deferred.
+
 ## Runtime layers
 
 ### 1. PEC — project state
