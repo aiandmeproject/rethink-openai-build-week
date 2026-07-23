@@ -18,7 +18,7 @@ Rethink Engine
     └── Domain Profile: BUSINESS 1.0.0
 ```
 
-Rethink Core remains the shared PEC, STM, evidence, uncertainty, integrity, reducer, and Lab Notebook foundation. The versioned domain-profile registry also recognizes GENERAL, APPS, and NEWS as planned but unavailable; they are not selectable or operational in this branch. New and legacy projects resolve to BUSINESS unless an explicit supported profile is assigned.
+Rethink Core remains the shared PEC, STM, Claim Ledger, evidence, uncertainty, integrity, reducer, and Lab Notebook foundation. The universal Claim Ledger stores multiple explicit claims plus canonical `SUPPORTS`, `CONTRADICTS`, and `LIMITS` evidence relationships while keeping claims, assumptions, evidence, and the existing overall proposition behavior distinct. The versioned domain-profile registry also recognizes GENERAL, APPS, and NEWS as planned but unavailable; they are not selectable or operational in this branch. New and legacy projects resolve to BUSINESS unless an explicit supported profile is assigned.
 
 ## Project Links
 
@@ -126,9 +126,11 @@ INPUT
 
 Guided Mode deliberately separates routing from method execution. A user sees the proposed question and route before deciding to run or override it. Rethink presents concise rationale and state changes; it does not expose private chain-of-thought.
 
+The Claim Ledger is currently a Core/data capability exposed through canonical state, the existing state-management API, Report JSON, the human-readable report, notebook export, locks, and project backups. New and legacy projects safely begin with an empty ledger. Claims are never inferred from project text or assumptions, legacy evidence remains unlinked unless a relationship is explicitly created, and relationship counts never auto-set claim status. A large Guided Mode Claim Ledger editor is intentionally outside this branch.
+
 ## Persistence and failure behavior
 
-- Project state, assumptions, evidence links, locked-version snapshots, reopening decisions, trace events, tangents, and notebook entries persist in browser `localStorage` on the current device.
+- Project state, Claim Ledger records and evidence relationships, assumptions, evidence links, locked-version snapshots, reopening decisions, trace events, tangents, and notebook entries persist in browser `localStorage` on the current device.
 - The three state counters and bottom dock remain available throughout PEC phases and reasoning cycles. Their dedicated panels support inspect/add/edit/soft-remove workflows; every edit requires a reason and appends audit history rather than erasing it.
 - Versioned project backup/import provides a portable restorable record, including resumable research/reasoning job metadata and all canonical project state. Human-readable Report HTML, Report JSON, and Notebook JSON are deliberately separate, non-restorable artifacts.
 - `public/project-repository.js` isolates the current device-local implementation behind a small repository contract so later durable storage does not need to rewrite the reasoning runtime.
@@ -153,7 +155,7 @@ npm run smoke
 npm run verify
 ```
 
-The 103-test automated suite covers initialization, domain-profile contracts and availability, legacy profile migration, active-profile prompt isolation, PEC phases, router and cycle schemas, project-context isolation, complete evidence participation, taxonomy/provenance separation, synthetic-evidence exclusion, planned-test exclusion, source quality and collection-method persistence, prior-question reopening, validation-process versus proposition status, confidence trace, highest-leverage questions, method selection, invalid model output, notebook continuity, forced methods, linked state CRUD, controlled lock reopening, background research and Core-reasoning timeout/polling/retry/deduplication/recovery, research-specific token budgets, stage-specific research failure classification, rejection of partial evidence, stable native citation IDs, safe URL normalization, citation-failure diagnostics, technical-failure persistence and redaction, proceed-under-uncertainty recovery, completed-but-inconclusive outcomes, research exhaustion, UTF-8 human and JSON reports, readable enums and citations, human gates and evidence references, loop detection, module and profile registration, repository migration, versioned cross-origin backup/import, credential exclusion, security headers, health/module endpoints, static serving, and HTTP end-to-end paths.
+The 118-test automated suite covers initialization, Claim Ledger contracts and stable IDs, explicit claim status, canonical many-to-many evidence relationships, referential integrity for active and retired relationships, deterministic duplicate handling, soft unlinking, non-automatic claim validation, legacy no-fabrication migration, v1/v2/resumable persistence, domain-profile contracts and availability, active-profile prompt isolation, PEC phases, router and cycle schemas, project-context isolation, complete evidence participation, taxonomy/provenance separation, synthetic-evidence exclusion, planned-test exclusion, source quality and collection-method persistence, prior-question reopening, validation-process versus proposition status, confidence trace, highest-leverage questions, method selection, invalid model output, notebook continuity, forced methods, linked state CRUD, controlled lock reopening, background research and Core-reasoning timeout/polling/retry/deduplication/recovery, research-specific token budgets, stage-specific research failure classification, rejection of partial evidence, stable native citation IDs, safe URL normalization, citation-failure diagnostics, technical-failure persistence and redaction, proceed-under-uncertainty recovery, completed-but-inconclusive outcomes, research exhaustion, UTF-8 human and JSON reports, readable enums and citations, human gates and evidence references, loop detection, module and profile registration, repository migration, versioned cross-origin backup/import, contractor/workforce isolation, credential exclusion, security headers, health/module endpoints, static serving, and HTTP end-to-end paths.
 
 ## Public deployment
 
@@ -177,6 +179,7 @@ rethink-engine.js         State reducer and deterministic demo runtime
 rethink-schema.js         PEC/method/disposition registries and strict schemas
 rethink-modules.js        Versioned Core reasoning-module registry
 rethink-domain-profiles.js Versioned Domain Profile registry and resolution
+rethink-claims.js         Versioned Core Claim Ledger and canonical evidence relationships
 rethink-prompt.js         GPT-5.6 router and cycle instructions
 openai-client.js          Responses API, structured output, web search, citations
 public/                   Guided Mode interface
@@ -193,7 +196,7 @@ docs/                     Product concept and CHOICE case-study boundary
 
 ## Scope
 
-This is a polished Build Week vertical slice and the first usable Rethink Core, not the complete future platform. Guided Mode is the priority. There is no database, account system, multi-project dashboard, collaborative workspace, autonomous multi-cycle runner, or production telemetry. OIP, CDIL, and OAMPES are routeable in Live Mode and represented by bounded Demo Mode behavior, but they are not expanded into separate research products.
+This is a polished Build Week vertical slice and the first usable Rethink Core, not the complete future platform. Guided Mode is the priority. There is no database, account system, multi-project dashboard, collaborative workspace, autonomous multi-cycle runner, or production telemetry. The Claim Ledger does not yet implement provenance chains, source independence, evidence capability/scope, or full temporal integrity. OIP, CDIL, and OAMPES are routeable in Live Mode and represented by bounded Demo Mode behavior, but they are not expanded into separate research products.
 
 CHOICE is intentionally excluded from the runtime. It is documented only as a Rethink case study.
 

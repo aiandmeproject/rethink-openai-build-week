@@ -15,6 +15,38 @@ function sampleReport() {
     title: "Equipment uptime — readiness report",
     executiveSummary: "Evidence reveals… a narrower 1–19 employee segment with “mixed” support.",
     problemDefinition: "Determine whether uptime access is meaningfully unmet.",
+    claimLedger: {
+      version: 1,
+      statusPolicy: "EXPLICIT_NOT_INFERRED_FROM_RELATIONSHIPS",
+      claims: [{
+        id: "claim_material",
+        text: "The target segment experiences material uptime constraints.",
+        type: "MATERIAL",
+        status: "DISPUTED",
+        notes: "Support and limitations both remain material.",
+        createdAt: "2026-07-20T11:00:00.000Z",
+        updatedAt: "2026-07-20T11:30:00.000Z"
+      }],
+      evidenceRelationships: [{
+        id: "claim_evidence_1",
+        claimId: "claim_material",
+        evidenceId: "evidence_1",
+        relationship: "LIMITS",
+        status: "ACTIVE",
+        notes: "",
+        createdAt: "2026-07-20T11:10:00.000Z",
+        updatedAt: "2026-07-20T11:10:00.000Z",
+        removedAt: "",
+        removedReason: "",
+        evidence: {
+          id: "evidence_1",
+          claim: "The public source covers only a broad fleet population.",
+          status: "ACTIVE",
+          evidenceAuthenticity: "REAL_WORLD",
+          eligibleForRealWorldValidation: true
+        }
+      }]
+    },
     currentDisposition: {
       systemRecommendation: "HUMAN_REAL_WORLD_INPUT_REQUIRED",
       humanDisposition: "PROCEED_UNDER_UNCERTAINTY",
@@ -62,7 +94,7 @@ test("Final Report and Report JSON are distinct artifacts with correct formats",
 test("human-readable report renders professional sections, citations, and readable enum labels", () => {
   const html = renderProjectReportHtml(sampleReport());
   for (const heading of [
-    "Executive Summary", "Problem Definition", "Current Disposition", "Key Findings", "Proposition Status",
+    "Executive Summary", "Problem Definition", "Current Disposition", "Key Findings", "Core Claim Ledger", "Proposition Status",
     "Evidence Base", "Source Quality Assessment", "Supported Conclusions", "Contradictory / Limiting Evidence",
     "Remaining Assumptions", "Evidence Gaps", "Research Conducted", "Real-World Validation Required",
     "Risks and Limitations", "Human Decisions / Overrides", "Recommended Next Action",
@@ -70,6 +102,9 @@ test("human-readable report renders professional sections, citations, and readab
   ]) assert.match(html, new RegExp(heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(html, /Human \/ Real-World Input Required/);
   assert.match(html, /https:\/\/example\.com\/source/);
+  assert.match(html, /Explicit status:<\/strong> Disputed/);
+  assert.match(html, /Limits:<\/strong> The public source covers only a broad fleet population/);
+  assert.match(html, /not calculated from relationship counts/i);
   assert.equal(readableEnum("HUMAN_REAL_WORLD_INPUT_REQUIRED"), "Human / Real-World Input Required");
 });
 
@@ -97,6 +132,13 @@ test("human report separates synthetic test data from real-world Supporting Evid
     sourceClassification: "PRIMARY_SOURCE",
     sourceCategory: "SURVEY"
   }];
+  report.claimLedger.evidenceRelationships[0].evidence = {
+    id: "evidence_1",
+    claim: syntheticClaim,
+    status: "ACTIVE",
+    evidenceAuthenticity: "SYNTHETIC_SIMULATED",
+    eligibleForRealWorldValidation: false
+  };
   const html = renderProjectReportHtml(report);
   const supportingSection = html.slice(html.indexOf("<h3>Supporting Evidence</h3>"), html.indexOf("<h3>Contradictory Evidence</h3>"));
   const syntheticSection = html.slice(html.indexOf("<h3>Synthetic / Simulated Test Data</h3>"), html.indexOf("</section>", html.indexOf("<h3>Synthetic / Simulated Test Data</h3>")));
@@ -108,4 +150,7 @@ test("human report separates synthetic test data from real-world Supporting Evid
   assert.match(syntheticSection, /Cannot validate real-world propositions/);
   assert.match(syntheticSection, /Cannot satisfy Human Gate/);
   assert.doesNotMatch(syntheticSection, /High<\/dd>|Primary Source/);
+  const claimSection = html.slice(html.indexOf("<h2>Core Claim Ledger</h2>"), html.indexOf("</section>", html.indexOf("<h2>Core Claim Ledger</h2>")));
+  assert.match(claimSection, /synthetic, removed, or otherwise ineligible for real-world validation/i);
+  assert.match(claimSection, /Explicit status:<\/strong> Disputed/);
 });

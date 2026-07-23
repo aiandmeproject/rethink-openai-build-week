@@ -27,6 +27,14 @@ import {
   createDomainProfileAssignment,
   resolveProjectDomainProfile
 } from "./rethink-domain-profiles.js";
+import {
+  createEmptyClaimLedger,
+  normalizeClaimLedger,
+  removeClaimEvidenceRelationship as removeClaimEvidenceRelationshipRecord,
+  removeRelationshipsForEvidence,
+  upsertClaim as upsertClaimRecord,
+  upsertClaimEvidenceRelationship as upsertClaimEvidenceRelationshipRecord
+} from "./rethink-claims.js";
 
 const SAMPLE_PATTERN = /florida[\s\S]*disabled veterans|disabled veterans[\s\S]*florida/i;
 
@@ -176,6 +184,7 @@ export function initializeProject(input, {
     cycle: 0,
     assumptions: initialAssumptions(cleanInput, now),
     evidence: [],
+    claimLedger: createEmptyClaimLedger(),
     lockedDecisions: [],
     tangents: [],
     notebook: [],
@@ -210,8 +219,11 @@ function publicEvidence(state) {
 
 function evidenceStateFor(state, method) {
   const evidence = actualEvidence(state);
+  const claimLinkedEvidenceIds = new Set((state.claimLedger?.evidenceRelationships || [])
+    .filter((item) => item.status === "ACTIVE")
+    .map((item) => item.evidenceId));
   const relevant = evidence.filter((item) => {
-    if ((item.assumptionIds || []).length > 0 || (item.questionRefs || []).length > 0) return true;
+    if ((item.assumptionIds || []).length > 0 || (item.questionRefs || []).length > 0 || claimLinkedEvidenceIds.has(item.id)) return true;
     return method === "CAPTURE" || method === "DECIDE";
   });
   const usable = relevant.length > 0 ? relevant : evidence;
@@ -280,11 +292,18 @@ export function projectProgressSignature(state) {
     .filter((item) => item.status !== "REMOVED")
     .map((item) => `${item.id}:${item.status}:${item.intakeType}:${item.updatedAt || item.capturedAt || ""}:${item.reliability || "NONE"}:${item.relationship || "NONE"}`)
     .sort();
+  const claims = (state.claimLedger?.claims || [])
+    .map((item) => `${item.id}:${item.type}:${item.status}:${item.updatedAt}`)
+    .sort();
+  const claimEvidenceRelationships = (state.claimLedger?.evidenceRelationships || [])
+    .filter((item) => item.status === "ACTIVE")
+    .map((item) => `${item.id}:${item.claimId}:${item.evidenceId}:${item.relationship}:${item.updatedAt}`)
+    .sort();
   const locks = (state.lockedDecisions || []).map((item) => `${item.id}:${item.status || "ACTIVE"}`).sort();
   const gates = (state.humanGates || []).map((item) => `${item.id}:${item.status}`).sort();
   const decisions = (state.humanDecisions || []).map((item) => `${item.id}:${item.humanDisposition}`).sort();
   const stages = (state.stageOverrides || []).map((item) => `${item.id}:${item.action}:${item.targetPecPhase}:${item.forcedMethod || ""}`).sort();
-  return JSON.stringify({ assumptions, evidence, locks, gates, decisions, stages, phase: state.pecPhase?.id, lifecycleStatus: state.lifecycleStatus, currentDisposition: state.currentDisposition });
+  return JSON.stringify({ assumptions, evidence, claims, claimEvidenceRelationships, locks, gates, decisions, stages, phase: state.pecPhase?.id, lifecycleStatus: state.lifecycleStatus, currentDisposition: state.currentDisposition });
 }
 
 function trustedCycleEntries(state) {
@@ -911,6 +930,9 @@ export function normalizeProjectState(state) {
       removedReason: evidence.removedReason || ""
     };
   });
+  normalized.claimLedger = normalizeClaimLedger(normalized.claimLedger, {
+    evidenceIds: normalized.evidence.map((item) => item.id)
+  });
   const existingQuestions = Array.isArray(normalized.questions) ? normalized.questions : [];
   const questionTexts = [
     ...existingQuestions.map((item) => item.text),
@@ -981,6 +1003,7 @@ export function createNotebookExport(state, { now = new Date() } = {}) {
     stateEvents: cloneValue(normalized.stateEvents),
     evidence: cloneValue(normalized.evidence),
     assumptions: cloneValue(normalized.assumptions),
+    claimLedger: cloneValue(normalized.claimLedger),
     lockedVersions: cloneValue(normalized.lockedDecisions)
   };
 }
@@ -1318,6 +1341,7 @@ export function lockProjectState(state, { note = "", now = new Date() } = {}) {
     pecPhase: state.pecPhase.id,
     assumptions: state.assumptions.map((assumption) => cloneValue(assumption)),
     evidence: state.evidence.map((evidence) => cloneValue(evidence)),
+    claimLedger: cloneValue(state.claimLedger),
     highestLeverageQuestion: latestTrustedCycle?.highestLeverageQuestion || "",
     reopeningTrigger: "",
     reopeningReason: "",
@@ -1440,7 +1464,7 @@ function createStateEditNotebookEntry(state, event, at) {
     remainingUncertainty: event.after?.unresolvedUncertainty || trustedCycleEntries(state).at(-1)?.remainingUncertainty || [],
     pecPhaseAfter: state.pecPhase.id,
     nextRecommendedAction: "Re-run the router if this manual state change could alter the highest-leverage question.",
-    nextActionWhy: "Manual evidence and assumption edits can change reasoning priority.",
+    nextActionWhy: "Manual claim, evidence, and assumption edits can change reasoning priority.",
     disposition: isDisposition || isResearchDecision ? event.after.humanDisposition : "CONTINUE",
     limitations: [],
     runtime: { mode: "local", model: "none", responseId: "" },
@@ -1777,6 +1801,10 @@ function removeEvidence(state, operation, at) {
   const reason = requiredReason(operation.reason);
   const existing = activeEvidence(state, operation.id);
   if (!existing) throw new ValidationError("The evidence item no longer exists or has already been removed.");
+  const relationshipRemoval = removeRelationshipsForEvidence(state.claimLedger, existing.id, {
+    reason: `Evidence removed: ${reason}`,
+    now: at
+  });
   const removed = {
     ...existing,
     status: "REMOVED",
@@ -1798,12 +1826,17 @@ function removeEvidence(state, operation, at) {
     action: "REMOVED",
     timestamp: timestamp(at),
     cycle: state.cycle,
-    summary: `Removed evidence: ${existing.claim}`,
+    summary: `Removed evidence: ${existing.claim}${relationshipRemoval.removed.length ? ` and retired ${relationshipRemoval.removed.length} claim link${relationshipRemoval.removed.length === 1 ? "" : "s"}` : ""}`,
     reason,
     before: cloneValue(existing),
     after: cloneValue(removed)
   };
-  return finishStateEdit({ ...state, assumptions, evidence }, event, at);
+  return finishStateEdit({
+    ...state,
+    assumptions,
+    evidence,
+    claimLedger: relationshipRemoval.ledger
+  }, event, at);
 }
 
 function reopenLock(state, operation, at) {
@@ -2172,6 +2205,92 @@ function decideAfterResearch(state, operation, at) {
   }, event, at);
 }
 
+function linkableClaimEvidenceIds(state) {
+  return state.evidence
+    .filter((item) => item.status === "ACTIVE" && ACTUAL_EVIDENCE_TYPES.includes(item.intakeType))
+    .map((item) => item.id);
+}
+
+function upsertProjectClaim(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = upsertClaimRecord(state.claimLedger, operation.item || {}, { now: at });
+  const event = {
+    id: makeId("event", at),
+    entityType: "CLAIM",
+    entityId: result.claim.id,
+    action: result.action,
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `${result.action === "CREATED" ? "Added" : "Updated"} claim: ${result.claim.text}`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.claim)
+  };
+  return {
+    ...finishStateEdit({ ...state, claimLedger: result.ledger }, event, at),
+    claim: result.claim
+  };
+}
+
+function upsertProjectClaimEvidenceRelationship(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = upsertClaimEvidenceRelationshipRecord(state.claimLedger, operation.item || {}, {
+    now: at,
+    evidenceIds: linkableClaimEvidenceIds(state),
+    knownEvidenceIds: state.evidence.map((item) => item.id)
+  });
+  if (result.unchanged) {
+    return {
+      state,
+      event: null,
+      notebookEntry: null,
+      relationship: result.relationship,
+      unchanged: true
+    };
+  }
+  const event = {
+    id: makeId("event", at),
+    entityType: "CLAIM_EVIDENCE_RELATIONSHIP",
+    entityId: result.relationship.id,
+    action: result.action === "CREATED" ? "LINKED" : "UPDATED",
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `${result.action === "CREATED" ? "Linked" : "Updated the link between"} evidence ${result.relationship.evidenceId} ${result.relationship.relationship.toLowerCase()} claim ${result.relationship.claimId}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.relationship)
+  };
+  return {
+    ...finishStateEdit({ ...state, claimLedger: result.ledger }, event, at),
+    relationship: result.relationship,
+    unchanged: false
+  };
+}
+
+function removeProjectClaimEvidenceRelationship(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = removeClaimEvidenceRelationshipRecord(state.claimLedger, operation.id, {
+    reason,
+    now: at
+  });
+  const event = {
+    id: makeId("event", at),
+    entityType: "CLAIM_EVIDENCE_RELATIONSHIP",
+    entityId: result.relationship.id,
+    action: "UNLINKED",
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `Removed the ${result.relationship.relationship.toLowerCase()} link between evidence ${result.relationship.evidenceId} and claim ${result.relationship.claimId}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.relationship)
+  };
+  return {
+    ...finishStateEdit({ ...state, claimLedger: result.ledger }, event, at),
+    relationship: result.relationship
+  };
+}
+
 export function manageProjectState(state, operation, { now = new Date() } = {}) {
   state = normalizeProjectState(state);
   if (!operation || typeof operation !== "object") {
@@ -2182,6 +2301,9 @@ export function manageProjectState(state, operation, { now = new Date() } = {}) 
     case "REMOVE_ASSUMPTION": return removeAssumption(state, operation, now);
     case "UPSERT_EVIDENCE": return upsertEvidence(state, operation, now);
     case "REMOVE_EVIDENCE": return removeEvidence(state, operation, now);
+    case "UPSERT_CLAIM": return upsertProjectClaim(state, operation, now);
+    case "UPSERT_CLAIM_EVIDENCE_RELATIONSHIP": return upsertProjectClaimEvidenceRelationship(state, operation, now);
+    case "REMOVE_CLAIM_EVIDENCE_RELATIONSHIP": return removeProjectClaimEvidenceRelationship(state, operation, now);
     case "REOPEN_LOCK": return reopenLock(state, operation, now);
     case "RESOLVE_HUMAN_GATE": return resolveHumanGate(state, operation, now);
     case "OVERRIDE_DISPOSITION": return overrideDisposition(state, operation, now);
@@ -2282,6 +2404,26 @@ export function createProjectReport(state, { now = new Date() } = {}) {
     .filter((item) => /broad|indirect|not specific|insufficient|does not establish|cannot establish/i.test(item.assessment || ""))
     .map(reportEvidenceItem);
   const latestHumanDecision = state.humanDecisions.at(-1) || null;
+  const evidenceById = new Map(state.evidence.map((item) => [item.id, item]));
+  const claimLedgerReport = {
+    version: state.claimLedger.version,
+    statusPolicy: "EXPLICIT_NOT_INFERRED_FROM_RELATIONSHIPS",
+    claims: state.claimLedger.claims.map((claim) => cloneValue(claim)),
+    evidenceRelationships: state.claimLedger.evidenceRelationships.map((relationship) => {
+      const item = evidenceById.get(relationship.evidenceId);
+      const synthetic = isSyntheticOrSimulatedForReport(item);
+      return {
+        ...cloneValue(relationship),
+        evidence: item ? {
+          id: item.id,
+          claim: item.claim,
+          status: item.status,
+          evidenceAuthenticity: synthetic ? "SYNTHETIC_SIMULATED" : item.evidenceAuthenticity,
+          eligibleForRealWorldValidation: item.status === "ACTIVE" && !synthetic
+        } : null
+      };
+    })
+  };
   const propositionStatus = evidence.length === 0
     ? "INSUFFICIENT_EVIDENCE"
     : (evaluation?.propositionStatus || "UNRESOLVED");
@@ -2301,6 +2443,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
       ? `The project remains at ${state.pecPhase.label}. No observed evidence is recorded for real-world validation${reportSyntheticEvidence.length ? `; ${reportSyntheticEvidence.length} synthetic or simulated item${reportSyntheticEvidence.length === 1 ? " is" : "s are"} retained for test or method validation only` : ""}, so the current proposition is not validated and the report preserves it as an open question.`
       : `Rethink evaluated ${evidence.length} observed evidence item${evidence.length === 1 ? "" : "s"}. The current proposition status is ${propositionStatus.replaceAll("_", " ").toLowerCase()}, and the current disposition is ${disposition.replaceAll("_", " ").toLowerCase()}.`,
     problemDefinition: state.problemDefinition,
+    claimLedger: claimLedgerReport,
     currentDisposition: {
       systemRecommendation: lastCycle?.disposition || state.currentDisposition,
       humanDisposition: latestHumanDecision?.humanDisposition || "",

@@ -68,6 +68,30 @@ function renderSyntheticEvidence(items) {
   </article>`).join("");
 }
 
+function renderClaimLedger(ledger) {
+  const claims = Array.isArray(ledger?.claims) ? ledger.claims : [];
+  const relationships = Array.isArray(ledger?.evidenceRelationships)
+    ? ledger.evidenceRelationships.filter((item) => item.status === "ACTIVE")
+    : [];
+  if (claims.length === 0) {
+    return '<p class="empty">No explicit claims are recorded. Evidence remains available in the Evidence Base but is not presented as support for an unrecorded claim.</p>';
+  }
+  return `${claims.map((claim) => {
+    const linked = relationships.filter((item) => item.claimId === claim.id);
+    return `<article class="claim-item">
+      <h4>${escapeHtml(claim.text)}</h4>
+      <p><strong>Type:</strong> ${escapeHtml(readableEnum(claim.type))}<br>
+      <strong>Explicit status:</strong> ${escapeHtml(readableEnum(claim.status))}</p>
+      ${claim.notes ? `<p>${escapeHtml(claim.notes)}</p>` : ""}
+      ${linked.length ? `<ul>${linked.map((item) => {
+        const eligible = item.evidence?.eligibleForRealWorldValidation !== false;
+        const label = item.evidence?.claim || item.evidenceId;
+        return `<li><strong>${escapeHtml(readableEnum(item.relationship))}:</strong> ${escapeHtml(label)}${eligible ? "" : " — synthetic, removed, or otherwise ineligible for real-world validation"}</li>`;
+      }).join("")}</ul>` : '<p class="empty">No active evidence relationships are recorded for this claim.</p>'}
+    </article>`;
+  }).join("")}<p class="meta">Claim statuses are explicit project state and are not calculated from relationship counts.</p>`;
+}
+
 function collectReferences(report) {
   const references = [];
   const seen = new Set();
@@ -125,7 +149,7 @@ export function renderProjectReportHtml(report) {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)} — Rethink Final Report</title>
 <style>
-  :root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#1f2925;background:#f4f1e9}body{margin:0}.report{max-width:900px;margin:0 auto;background:#fff;min-height:100vh;padding:64px 72px;box-sizing:border-box}header{border-bottom:3px solid #1f5a45;padding-bottom:24px;margin-bottom:36px}h1{font-family:Georgia,serif;font-size:38px;margin:6px 0 12px}h2{font-family:Georgia,serif;color:#1f5a45;border-bottom:1px solid #d9ddd8;padding-bottom:8px;margin-top:38px}h3{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:#51645b}.kicker{color:#1f5a45;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:700}.meta,.empty{color:#66736d}.summary{font-size:18px;line-height:1.55}.status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.status-grid div,.evidence-item,.research-item,.decision-item{border:1px solid #d9ddd8;border-radius:8px;padding:16px}.status-grid span{display:block;color:#66736d;font-size:12px;text-transform:uppercase}.status-grid strong{display:block;margin-top:5px}p,li,dd{line-height:1.5}dl{display:grid;grid-template-columns:150px 1fr;gap:5px 14px}dt{font-weight:700}dd{margin:0}.evidence-item,.research-item,.decision-item{margin:12px 0;break-inside:avoid}.evidence-item h4,.research-item h4{margin-top:0}a{color:#1f5a45;word-break:break-all}.references li{margin-bottom:8px}.footer-note{margin-top:48px;border-top:1px solid #d9ddd8;padding-top:18px;color:#66736d;font-size:12px}@media(max-width:700px){.report{padding:32px 22px}.status-grid{grid-template-columns:1fr}dl{grid-template-columns:1fr}}@media print{body{background:#fff}.report{padding:24px 32px}.no-print{display:none}}
+  :root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#1f2925;background:#f4f1e9}body{margin:0}.report{max-width:900px;margin:0 auto;background:#fff;min-height:100vh;padding:64px 72px;box-sizing:border-box}header{border-bottom:3px solid #1f5a45;padding-bottom:24px;margin-bottom:36px}h1{font-family:Georgia,serif;font-size:38px;margin:6px 0 12px}h2{font-family:Georgia,serif;color:#1f5a45;border-bottom:1px solid #d9ddd8;padding-bottom:8px;margin-top:38px}h3{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:#51645b}.kicker{color:#1f5a45;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:700}.meta,.empty{color:#66736d}.summary{font-size:18px;line-height:1.55}.status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.status-grid div,.claim-item,.evidence-item,.research-item,.decision-item{border:1px solid #d9ddd8;border-radius:8px;padding:16px}.status-grid span{display:block;color:#66736d;font-size:12px;text-transform:uppercase}.status-grid strong{display:block;margin-top:5px}p,li,dd{line-height:1.5}dl{display:grid;grid-template-columns:150px 1fr;gap:5px 14px}dt{font-weight:700}dd{margin:0}.claim-item,.evidence-item,.research-item,.decision-item{margin:12px 0;break-inside:avoid}.claim-item h4,.evidence-item h4,.research-item h4{margin-top:0}a{color:#1f5a45;word-break:break-all}.references li{margin-bottom:8px}.footer-note{margin-top:48px;border-top:1px solid #d9ddd8;padding-top:18px;color:#66736d;font-size:12px}@media(max-width:700px){.report{padding:32px 22px}.status-grid{grid-template-columns:1fr}dl{grid-template-columns:1fr}}@media print{body{background:#fff}.report{padding:24px 32px}.no-print{display:none}}
 </style></head><body><main class="report">
 <header><p class="kicker">Rethink Core · Final Report</p><h1>${escapeHtml(title)}</h1><p class="meta">Project ${escapeHtml(report?.projectId || "Not recorded")} · Generated ${escapeHtml(generated)}</p></header>
 <section><h2>Executive Summary</h2><p class="summary">${escapeHtml(report?.executiveSummary || "No executive summary is available.")}</p></section>
@@ -137,6 +161,7 @@ export function renderProjectReportHtml(report) {
   <div><span>Rationale</span><strong>${escapeHtml(disposition.rationale || "Not recorded")}</strong></div>
 </div></section>
 <section><h2>Key Findings</h2>${renderList(report?.keyFindings, "No material finding has been established.")}</section>
+<section><h2>Core Claim Ledger</h2>${renderClaimLedger(report?.claimLedger)}</section>
 <section><h2>Proposition Status</h2><div class="status-grid">
   <div><span>Proposition</span><strong>${escapeHtml(readableEnum(status.status))}</strong></div>
   <div><span>Validation process</span><strong>${escapeHtml(readableEnum(status.validationProcessStatus))}</strong></div>

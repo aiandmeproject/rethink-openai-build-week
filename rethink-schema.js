@@ -572,6 +572,12 @@ export function validateProjectState(state) {
   if (state.stateEvents != null && !Array.isArray(state.stateEvents)) {
     throw new ValidationError("state.stateEvents must be an array when present.");
   }
+  if (state.claimLedger != null) {
+    requireObject(state.claimLedger, "state.claimLedger");
+    if (!Number.isInteger(state.claimLedger.version) || !Array.isArray(state.claimLedger.claims) || !Array.isArray(state.claimLedger.evidenceRelationships)) {
+      throw new ValidationError("state.claimLedger must contain an integer version plus claims and evidenceRelationships arrays.");
+    }
+  }
   for (const field of ["humanGates", "humanDecisions", "stageOverrides", "questions", "researchHistory"]) {
     if (state[field] != null && !Array.isArray(state[field])) {
       throw new ValidationError(`state.${field} must be an array when present.`);

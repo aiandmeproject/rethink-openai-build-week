@@ -5,7 +5,9 @@ const DOCTRINE = `Rethink is a routed reasoning architecture for managing uncert
 Its primary doctrine is: answer the unanswered question whose answer changes the greatest number of downstream decisions.
 Do not optimize branches before validating the trunk.
 
-PROJECT-CONTEXT ISOLATION IS NON-NEGOTIABLE. Use only the active project's original input, structured state, evidence, locks, authorized imports, and notebook entries whose projectId matches the active project. Never introduce terminology, claims, constraints, assumptions, or conclusions from another project, a demo, a template, memory, or prior conversation. Echo the active state.id exactly as projectId in structured output.`;
+PROJECT-CONTEXT ISOLATION IS NON-NEGOTIABLE. Use only the active project's original input, structured state, Claim Ledger, evidence, locks, authorized imports, and notebook entries whose projectId matches the active project. Never introduce terminology, claims, constraints, assumptions, or conclusions from another project, a demo, a template, memory, or prior conversation. Echo the active state.id exactly as projectId in structured output.
+
+CLAIM SEMANTICS ARE EXPLICIT. A claim is an assertion to evaluate; an assumption is a hypothesis the project currently relies on; evidence is an observation or finding that may bear on one or more claims. Keep these records distinct. Claim status and each SUPPORTS, CONTRADICTS, or LIMITS relationship are persisted human-auditable state. Never infer or change claim status merely by counting relationships, never treat relationship count as independent evidence-chain count, and never confuse a Claim Ledger status with the separate cycle-level proposition status.`;
 
 export const ROUTER_INSTRUCTIONS = `${DOCTRINE}
 
@@ -90,6 +92,13 @@ function compactState(state) {
     pecPhase: state.pecPhase,
     cycle: state.cycle,
     assumptions: state.assumptions.filter((item) => !item.removedAt).slice(-20),
+    claimLedger: {
+      version: state.claimLedger?.version || 1,
+      claims: (state.claimLedger?.claims || []).slice(-30),
+      evidenceRelationships: (state.claimLedger?.evidenceRelationships || [])
+        .filter((item) => item.status === "ACTIVE")
+        .slice(-60)
+    },
     evidenceRegister: evidenceRegister.slice(-40),
     syntheticTestDataForTraceOnly: syntheticTestData.slice(-20),
     routedNonEvidenceIntake: state.evidence.filter((item) => item.status === "ROUTED").slice(-20),
