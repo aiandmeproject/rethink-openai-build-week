@@ -8,6 +8,18 @@ Rethink is a routed reasoning architecture for managing uncertainty over the lif
 
 > Do not optimize branches before validating the trunk.
 
+## Rethink Engine
+
+The current application is the first operational profile of Rethink Engine:
+
+```text
+Rethink Engine
+└── Rethink Core
+    └── Domain Profile: BUSINESS 1.0.0
+```
+
+Rethink Core remains the shared PEC, STM, evidence, uncertainty, integrity, reducer, and Lab Notebook foundation. The versioned domain-profile registry also recognizes GENERAL, APPS, and NEWS as planned but unavailable; they are not selectable or operational in this branch. New and legacy projects resolve to BUSINESS unless an explicit supported profile is assigned.
+
 ## Project Links
 
 - **OpenAI Build Week Submission:**https://devpost.com/software/rethink-1jx9f2
@@ -141,7 +153,7 @@ npm run smoke
 npm run verify
 ```
 
-The 95-test automated suite covers initialization, PEC phases, router and cycle schemas, project-context isolation, complete evidence participation, taxonomy/provenance separation, synthetic-evidence exclusion, planned-test exclusion, source quality and collection-method persistence, prior-question reopening, validation-process versus proposition status, confidence trace, highest-leverage questions, method selection, invalid model output, notebook continuity, forced methods, linked state CRUD, controlled lock reopening, background research and Core-reasoning timeout/polling/retry/deduplication/recovery, research-specific token budgets, stage-specific research failure classification, rejection of partial evidence, stable native citation IDs, safe URL normalization, citation-failure diagnostics, technical-failure persistence and redaction, proceed-under-uncertainty recovery, completed-but-inconclusive outcomes, research exhaustion, UTF-8 human and JSON reports, readable enums and citations, human gates and evidence references, loop detection, module registration, repository migration, versioned cross-origin backup/import, credential exclusion, security headers, health/module endpoints, static serving, and HTTP end-to-end paths.
+The 103-test automated suite covers initialization, domain-profile contracts and availability, legacy profile migration, active-profile prompt isolation, PEC phases, router and cycle schemas, project-context isolation, complete evidence participation, taxonomy/provenance separation, synthetic-evidence exclusion, planned-test exclusion, source quality and collection-method persistence, prior-question reopening, validation-process versus proposition status, confidence trace, highest-leverage questions, method selection, invalid model output, notebook continuity, forced methods, linked state CRUD, controlled lock reopening, background research and Core-reasoning timeout/polling/retry/deduplication/recovery, research-specific token budgets, stage-specific research failure classification, rejection of partial evidence, stable native citation IDs, safe URL normalization, citation-failure diagnostics, technical-failure persistence and redaction, proceed-under-uncertainty recovery, completed-but-inconclusive outcomes, research exhaustion, UTF-8 human and JSON reports, readable enums and citations, human gates and evidence references, loop detection, module and profile registration, repository migration, versioned cross-origin backup/import, credential exclusion, security headers, health/module endpoints, static serving, and HTTP end-to-end paths.
 
 ## Public deployment
 
@@ -164,6 +176,7 @@ server.js                 HTTP server and API boundary
 rethink-engine.js         State reducer and deterministic demo runtime
 rethink-schema.js         PEC/method/disposition registries and strict schemas
 rethink-modules.js        Versioned Core reasoning-module registry
+rethink-domain-profiles.js Versioned Domain Profile registry and resolution
 rethink-prompt.js         GPT-5.6 router and cycle instructions
 openai-client.js          Responses API, structured output, web search, citations
 public/                   Guided Mode interface

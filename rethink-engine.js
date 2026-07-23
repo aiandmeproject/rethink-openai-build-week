@@ -22,6 +22,11 @@ import {
 } from "./rethink-schema.js";
 import { getReasoningModule } from "./rethink-modules.js";
 import { normalizeCitationUrl } from "./citation-registry.js";
+import {
+  DEFAULT_DOMAIN_PROFILE_ID,
+  createDomainProfileAssignment,
+  resolveProjectDomainProfile
+} from "./rethink-domain-profiles.js";
 
 const SAMPLE_PATTERN = /florida[\s\S]*disabled veterans|disabled veterans[\s\S]*florida/i;
 
@@ -146,16 +151,22 @@ function initialAssumptions(input, now) {
   ];
 }
 
-export function initializeProject(input, { now = new Date() } = {}) {
+export function initializeProject(input, {
+  now = new Date(),
+  domainProfile = DEFAULT_DOMAIN_PROFILE_ID,
+  domainProfileVersion
+} = {}) {
   if (typeof input !== "string" || input.trim().length < 8) {
     throw new ValidationError("Describe the messy problem or idea in at least 8 characters.");
   }
 
   const cleanInput = input.replace(/\s+/g, " ").trim();
   const createdAt = timestamp(now);
+  const profileAssignment = createDomainProfileAssignment(domainProfile, { version: domainProfileVersion });
   return {
     id: makeId("project", now),
     contextBoundaryVersion: 2,
+    ...profileAssignment,
     title: titleFromInput(cleanInput),
     originalInput: cleanInput,
     problemDefinition: cleanInput,
@@ -809,6 +820,9 @@ export function createDemoCycle(state, routing) {
 export function normalizeProjectState(state) {
   validateProjectState(state);
   const normalized = cloneValue(state);
+  const resolvedProfile = resolveProjectDomainProfile(normalized);
+  normalized.domainProfile = resolvedProfile.id;
+  normalized.domainProfileVersion = resolvedProfile.version;
   normalized.contextBoundaryVersion = 2;
   normalized.lifecycleStatus = normalized.lifecycleStatus || "ACTIVE";
   normalized.currentDisposition = normalized.currentDisposition || trustedCycleEntries(normalized).at(-1)?.disposition || "CONTINUE";
@@ -957,6 +971,8 @@ export function createNotebookExport(state, { now = new Date() } = {}) {
     formatVersion: 1,
     exportedAt: timestamp(now),
     projectId: normalized.id,
+    domainProfile: normalized.domainProfile,
+    domainProfileVersion: normalized.domainProfileVersion,
     projectTitle: normalized.title,
     originalInput: normalized.originalInput,
     currentPecPhase: normalized.pecPhase,
@@ -2278,6 +2294,8 @@ export function createProjectReport(state, { now = new Date() } = {}) {
     reportVersion: "1.0",
     generatedAt: timestamp(now),
     projectId: state.id,
+    domainProfile: state.domainProfile,
+    domainProfileVersion: state.domainProfileVersion,
     title: state.title,
     executiveSummary: evidence.length === 0
       ? `The project remains at ${state.pecPhase.label}. No observed evidence is recorded for real-world validation${reportSyntheticEvidence.length ? `; ${reportSyntheticEvidence.length} synthetic or simulated item${reportSyntheticEvidence.length === 1 ? " is" : "s are"} retained for test or method validation only` : ""}, so the current proposition is not validated and the report preserves it as an open question.`

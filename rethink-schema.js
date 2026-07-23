@@ -555,6 +555,8 @@ export function validateCycleOutput(value) {
 export function validateProjectState(state) {
   requireObject(state, "Project state");
   requireString(state.id, "state.id");
+  if (state.domainProfile != null) requireString(state.domainProfile, "state.domainProfile");
+  if (state.domainProfileVersion != null) requireString(state.domainProfileVersion, "state.domainProfileVersion");
   requireString(state.originalInput, "state.originalInput");
   requireString(state.problemDefinition, "state.problemDefinition");
   requireObject(state.pecPhase, "state.pecPhase");

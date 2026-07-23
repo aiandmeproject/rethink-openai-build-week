@@ -197,3 +197,15 @@
 - Human-readable HTML and the in-app report now give synthetic data its own section and state: **Synthetic / Simulated**, **Test or method-validation only**, **Cannot validate real-world propositions**, and **Cannot satisfy Human Gate**.
 - Canonical evidence state and Core reasoning behavior were not changed; this is a conservative report-generation and presentation correction.
 - Added regression coverage for contradictory legacy metadata and synthetic report rendering. Full automated result: 95 tests passed, 0 failed.
+
+## 2026-07-23 — Rethink Engine Branch 1 domain-profile scaffolding
+
+- Added a versioned Domain Profile registry alongside the reasoning-module registry. BUSINESS `1.0.0` is active; GENERAL, APPS, and NEWS are known but planned/unavailable.
+- Added distinct resolution failures for known unavailable, unknown, and unsupported profile-version requests. Existing `{ input }` project creation remains backward compatible and defaults to BUSINESS.
+- Added `domainProfile` and `domainProfileVersion` to canonical project state. Existing normalization assigns missing legacy fields without fabricating cycles, notebook entries, evidence, or timestamps.
+- Preserved profile identity through cycles, reports, notebook export, v1/v2 project backups, imports, device-local session hydration, and resumable v2 runtime state. Backup format versions were not changed.
+- Added only the resolved active profile to router/cycle prompt state. The BUSINESS overlay is intentionally minimal and adds no General, Apps, or News behavior.
+- Extended `/api/status` with profile availability metadata while keeping only BUSINESS operational and unexposed as a mode selector.
+- Added profile contract, duplicate-registration, future-extension, migration, API, prompt-isolation, backup/resumability, contractor-validation, and workforce-contamination regression coverage.
+- Full automated result after Branch 1 implementation: 103 tests passed, 0 failed. Smoke validation: home → project → route → cycle → notebook passed.
+- Deferred exactly as planned: profile switching, General/Apps/News behavior, Test Lab, Claim Ledger, provenance, Evidence Lineage, Independent Evidence Chains, Evidence Capability/Scope, and Evidence-Origin Audit.

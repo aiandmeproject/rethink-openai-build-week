@@ -86,6 +86,8 @@ test("HTTP demo flow initializes, routes, executes, and preserves continuity", a
     });
     assert.equal(createdResponse.status, 201);
     const { state } = await createdResponse.json();
+    assert.equal(state.domainProfile, "BUSINESS");
+    assert.equal(state.domainProfileVersion, "1.0.0");
 
     const route = await fetch(`${baseUrl}/api/rethink/route`, {
       method: "POST",
@@ -211,11 +213,58 @@ test("health and module registry endpoints expose deployable runtime metadata", 
     assert.ok(status.backgroundReasoningMethods.includes("TEST"));
     assert.ok(!status.backgroundReasoningMethods.includes("DEFINE"));
     assert.equal(status.longReasoningMaxOutputTokens, 12000);
+    assert.equal(status.defaultDomainProfile, "BUSINESS");
+    assert.deepEqual(status.domainProfiles.map((profile) => profile.id), ["BUSINESS", "GENERAL", "APPS", "NEWS"]);
+    assert.deepEqual(status.domainProfiles.filter((profile) => profile.operational).map((profile) => profile.id), ["BUSINESS"]);
+    assert.equal(status.domainProfiles.find((profile) => profile.id === "NEWS").availability, "PLANNED");
 
     const moduleResponse = await fetch(`${baseUrl}/api/modules`);
     const registry = await moduleResponse.json();
     assert.ok(registry.modules.length >= 14);
     assert.ok(registry.modules.some((module) => module.id === "VALIDATE" && module.version));
+  });
+});
+
+test("project creation distinguishes active, known unavailable, and unknown domain profiles", async () => {
+  await withServer(async (baseUrl) => {
+    const explicitResponse = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: "A business project needs an explicit supported profile assignment.",
+        domainProfile: "BUSINESS",
+        domainProfileVersion: "1.0.0"
+      })
+    });
+    assert.equal(explicitResponse.status, 201);
+    const explicit = await explicitResponse.json();
+    assert.equal(explicit.state.domainProfile, "BUSINESS");
+
+    const unavailableResponse = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: "A news investigation is deliberately unavailable during Branch 1.",
+        domainProfile: "NEWS"
+      })
+    });
+    const unavailable = await unavailableResponse.json();
+    assert.equal(unavailableResponse.status, 400);
+    assert.equal(unavailable.error.code, "DOMAIN_PROFILE_UNAVAILABLE");
+    assert.match(unavailable.error.message, /known but unavailable/i);
+
+    const unknownResponse = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: "An unknown profile must fail differently from a planned profile.",
+        domainProfile: "BANANA"
+      })
+    });
+    const unknown = await unknownResponse.json();
+    assert.equal(unknownResponse.status, 400);
+    assert.equal(unknown.error.code, "UNKNOWN_DOMAIN_PROFILE");
+    assert.match(unknown.error.message, /unknown domain profile/i);
   });
 });
 

@@ -22,6 +22,12 @@ import { createOpenAIClient, OpenAIRequestError } from "./openai-client.js";
 import { METHODS, ValidationError } from "./rethink-schema.js";
 import { REASONING_MODULE_REGISTRY } from "./rethink-modules.js";
 import { reconcileEvidenceWithNativeCitations } from "./citation-registry.js";
+import {
+  DEFAULT_DOMAIN_PROFILE_ID,
+  DOMAIN_PROFILE_REGISTRY,
+  DomainProfileError,
+  domainProfileStatusMetadata
+} from "./rethink-domain-profiles.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(ROOT, "public");
@@ -459,7 +465,7 @@ export function createRuntime({
   return {
     status() {
       return {
-        product: "Rethink",
+        product: "Rethink Engine",
         version: "0.1.0",
         demoAvailable: true,
         liveAvailable: Boolean(apiKey),
@@ -470,8 +476,10 @@ export function createRuntime({
         longReasoningMaxOutputTokens: safeLongReasoningMaxOutputTokens,
         researchMaxOutputTokens: safeResearchMaxOutputTokens,
         researchRetryMaxOutputTokens: safeResearchRetryMaxOutputTokens,
-        architecture: "PEC → STM → Evidence → Router → Module → State Update → Notebook → Disposition",
+        architecture: "Rethink Engine → Rethink Core → Domain Profile → PEC → STM → Evidence → Router → Module → State Update → Notebook → Disposition",
         persistence: "device-local-with-portable-backup",
+        defaultDomainProfile: DEFAULT_DOMAIN_PROFILE_ID,
+        domainProfiles: domainProfileStatusMetadata(DOMAIN_PROFILE_REGISTRY),
         modules: REASONING_MODULE_REGISTRY.list().map((module) => ({
           id: module.id,
           name: module.name,
@@ -481,8 +489,8 @@ export function createRuntime({
       };
     },
 
-    initialize(input) {
-      return initializeProject(input, { now: now() });
+    initialize(input, { domainProfile, domainProfileVersion } = {}) {
+      return initializeProject(input, { now: now(), domainProfile, domainProfileVersion });
     },
 
     importProject(backup) {
@@ -898,6 +906,12 @@ function serveStatic(request, response) {
 }
 
 function errorResponse(response, error) {
+  if (error instanceof DomainProfileError) {
+    sendJson(response, 400, {
+      error: { code: error.code, message: error.message, details: error.details }
+    });
+    return;
+  }
   if (error instanceof ValidationError) {
     sendJson(response, 400, {
       error: { code: "VALIDATION_ERROR", message: error.message, details: error.details }
@@ -935,7 +949,12 @@ export function createServer(options = {}) {
       }
       if (request.method === "POST" && url.pathname === "/api/projects") {
         const body = await readJson(request);
-        sendJson(response, 201, { state: runtime.initialize(body.input) });
+        sendJson(response, 201, {
+          state: runtime.initialize(body.input, {
+            domainProfile: body.domainProfile,
+            domainProfileVersion: body.domainProfileVersion
+          })
+        });
         return;
       }
       if (request.method === "POST" && url.pathname === "/api/projects/import") {

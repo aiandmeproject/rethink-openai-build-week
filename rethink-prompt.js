@@ -1,4 +1,5 @@
 import { MODULE_IDS, modulePromptCatalog } from "./rethink-modules.js";
+import { domainProfilePromptContext } from "./rethink-domain-profiles.js";
 
 const DOCTRINE = `Rethink is a routed reasoning architecture for managing uncertainty over the life of a problem.
 Its primary doctrine is: answer the unanswered question whose answer changes the greatest number of downstream decisions.
@@ -83,6 +84,7 @@ function compactState(state) {
   return {
     id: state.id,
     projectContextBoundary: `Use only records carrying projectId ${state.id} or contained directly in this state object.`,
+    domainProfile: domainProfilePromptContext(state),
     originalInput: state.originalInput,
     problemDefinition: state.problemDefinition,
     pecPhase: state.pecPhase,
