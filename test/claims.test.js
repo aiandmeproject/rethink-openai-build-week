@@ -316,6 +316,27 @@ test("active and retired relationships fail closed when a canonical claim or evi
     /references unknown claim/i
   );
 
+  const activeRemovedEvidence = structuredClone(state);
+  activeRemovedEvidence.evidence[0].status = "REMOVED";
+  activeRemovedEvidence.evidence[0].removedAt = "2026-07-23T14:04:00.000Z";
+  activeRemovedEvidence.evidence[0].removedReason = "Externally supplied inconsistent state.";
+  assert.throws(
+    () => normalizeProjectState(activeRemovedEvidence),
+    /active claim-evidence relationship.+removed or otherwise non-linkable evidence/i
+  );
+  for (const formatVersion of [1, 2]) {
+    assert.throws(
+      () => importProjectBackup({
+        format: "rethink.project.backup",
+        formatVersion,
+        projectId: activeRemovedEvidence.id,
+        project: activeRemovedEvidence,
+        ...(formatVersion === 2 ? { runtimeSession: {} } : {})
+      }, { now: fixedNow }),
+      /active claim-evidence relationship.+removed or otherwise non-linkable evidence/i
+    );
+  }
+
   const retired = manageProjectState(state, {
     type: "REMOVE_CLAIM_EVIDENCE_RELATIONSHIP",
     id: state.claimLedger.evidenceRelationships[0].id,
@@ -380,6 +401,26 @@ test("relationship removal is historical and evidence removal retires remaining 
     && removedEvidence.state.claimLedger.claims.some((claim) => claim.id === relationship.claimId)
   ));
   assert.doesNotThrow(() => normalizeProjectState(removedEvidence.state));
+
+  const reclassified = manageProjectState(relinked.state, {
+    type: "UPSERT_EVIDENCE",
+    reason: "Corrected this record from evidence to a planned future action.",
+    item: {
+      id: state.evidence[0].id,
+      claim: "Collect observations in a future test.",
+      intakeType: "PLANNED_TEST",
+      provenanceOrigin: "USER_INPUT",
+      reliability: "UNKNOWN_NOT_ASSESSED",
+      relationship: "NEUTRAL_CONTEXT_ONLY",
+      assessment: "This is a plan, not evidence.",
+      assumptionIds: [],
+      questionRefs: []
+    }
+  }, { now: new Date("2026-07-23T14:07:00.000Z") });
+  assert.equal(reclassified.state.evidence[0].status, "ROUTED");
+  assert.equal(reclassified.state.claimLedger.evidenceRelationships.at(-1).status, "REMOVED");
+  assert.match(reclassified.state.claimLedger.evidenceRelationships.at(-1).removedReason, /reclassified as non-linkable planned_test/i);
+  assert.doesNotThrow(() => normalizeProjectState(reclassified.state));
 });
 
 test("claims and links persist through cycle, lock, notebook, report, v1 backup, and import", () => {

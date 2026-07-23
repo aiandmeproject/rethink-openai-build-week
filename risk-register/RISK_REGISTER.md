@@ -117,3 +117,130 @@ Final verification on 2026-07-23:
 - Project normalization
 - Backup/import
 - Historical state preservation
+
+## Risk 2 — Active Claim–Evidence Relationship Could Reference Removed or Non-Linkable Evidence
+
+**Risk ID:** RISK-002
+
+**Category:** Data Integrity / Claim Ledger / Persistence
+
+**Status:** CLOSED
+
+**Identified During:** Branch 2 — `core/claim-ledger` final pre-PR architectural audit
+
+**Severity:** High
+
+**Likelihood Before Correction:** Material / reachable through evidence reclassification and externally supplied or imported state
+
+### Description
+
+The Claim Ledger architecture requires an `ACTIVE` evidence-to-claim relationship to reference evidence that is both canonical and currently eligible to participate as linkable evidence.
+
+The Branch 2 pre-PR audit found that validation previously checked only whether the referenced Evidence Item ID existed.
+
+As a result, the following semantically inconsistent state could pass project normalization and backup import:
+
+```text
+Evidence Item:
+status: REMOVED
+
+Claim Ledger relationship:
+status: ACTIVE
+```
+
+A broader version of the same issue could also occur when evidence was reclassified to a non-linkable intake state such as `ROUTED` / `PLANNED_TEST` while an `ACTIVE` Claim Ledger relationship remained.
+
+This did not create a dangling reference because the Evidence Item still existed, but it violated the Claim Ledger invariant that an `ACTIVE` relationship must reference active, linkable evidence.
+
+### Failure Scenario
+
+```text
+ACTIVE Claim Relationship
+    ↓
+Evidence ID exists
+    ↓
+Evidence status is REMOVED, ROUTED, PLANNED_TEST,
+or otherwise non-linkable
+    ↓
+Canonical state incorrectly preserves the relationship as ACTIVE
+```
+
+### Potential Impact
+
+An invalid active relationship could be treated as current claim-related evidence by downstream state, prompt, reporting, or reasoning logic even though the Evidence Item was no longer eligible to participate as active evidence.
+
+### Verification Result
+
+The audit confirmed that, before correction:
+
+- project normalization accepted `ACTIVE` relationships to `REMOVED` evidence;
+- v1 backup import accepted the state;
+- v2 backup import accepted the state;
+- normal `REMOVE_EVIDENCE` did not create the state because it already retired relationships atomically;
+- evidence reclassification could create the broader invalid condition by making evidence non-linkable without retiring its active Claim Ledger relationships.
+
+### Resolution
+
+The Claim Ledger validation model now distinguishes:
+
+1. all known canonical Evidence Item IDs; and
+2. currently active, linkable Evidence Item IDs.
+
+Every retained relationship must reference a known canonical Evidence Item.
+
+Additionally, every `ACTIVE` Claim Ledger relationship must reference evidence that:
+
+- has status `ACTIVE`; and
+- uses an actual evidence intake type eligible for Claim Ledger linking.
+
+`REMOVED` historical relationships may continue to reference retained `REMOVED` Evidence Items so historical integrity is preserved.
+
+Evidence reclassification to a non-linkable intake now atomically retires any active Claim Ledger relationships associated with that Evidence Item.
+
+Normalization and backup import now fail closed when an `ACTIVE` relationship references removed or otherwise non-linkable evidence.
+
+### Automated Verification
+
+Regression coverage verifies:
+
+- normalization rejects `ACTIVE` relationships to `REMOVED` evidence;
+- v1 backup import rejects the invalid state;
+- v2 backup import rejects the invalid state;
+- active relationships to routed/non-linkable evidence are rejected;
+- `REMOVED` historical relationships may reference retained `REMOVED` evidence;
+- evidence reclassification to `PLANNED_TEST` / `ROUTED` retires active relationships;
+- normal evidence removal continues to retire active relationships atomically.
+
+Final verification:
+
+- Focused Claim Ledger tests: 14 passed, 0 failed
+- Full automated suite: 118 passed, 0 failed
+- Smoke test: `home → project → route → cycle → notebook` passed
+- `git diff --check`: passed
+- Direct normalization reproduction: rejected
+- v1 import reproduction: rejected
+- v2 import reproduction: rejected
+
+### Resolution History
+
+| Step | Resolution history |
+| --- | --- |
+| 1 | The issue was discovered during the final Branch 2 pre-PR architectural audit. |
+| 2 | Audit confirmed a real semantic-integrity defect affecting normalization, v1/v2 import, and evidence reclassification. |
+| 3 | Production validation was corrected to distinguish known Evidence Items from active/linkable Evidence Items. |
+| 4 | Evidence reclassification was corrected to retire active Claim Ledger relationships when evidence becomes non-linkable. |
+| 5 | Focused regression coverage was added. |
+| 6 | All 118 automated tests, smoke testing, and `git diff --check` passed. |
+| 7 | Risk #2 was `CLOSED` before Branch 2 merge. |
+
+### Related Components
+
+- `rethink-claims.js`
+- `rethink-engine.js`
+- Claim Ledger
+- Evidence Registry
+- Project normalization
+- Evidence reclassification
+- v1 backup import
+- v2 backup import
+- Historical relationship preservation

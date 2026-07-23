@@ -129,7 +129,10 @@ export function validateClaimEvidenceRelationship(relationship, label = "claim e
   return relationship;
 }
 
-export function validateClaimLedger(ledger, { evidenceIds = null } = {}) {
+export function validateClaimLedger(ledger, {
+  evidenceIds = null,
+  linkableEvidenceIds = evidenceIds
+} = {}) {
   requireObject(ledger, "Claim ledger");
   if (ledger.version !== CLAIM_LEDGER_VERSION) {
     throw new ValidationError(`Unsupported claim ledger version: ${ledger.version ?? "missing"}.`);
@@ -148,6 +151,7 @@ export function validateClaimLedger(ledger, { evidenceIds = null } = {}) {
   });
 
   const knownEvidenceIds = evidenceIds == null ? null : new Set(evidenceIds);
+  const activeLinkableEvidenceIds = linkableEvidenceIds == null ? null : new Set(linkableEvidenceIds);
   const relationshipIds = new Set();
   const activePairs = new Set();
   ledger.evidenceRelationships.forEach((relationship, index) => {
@@ -162,6 +166,9 @@ export function validateClaimLedger(ledger, { evidenceIds = null } = {}) {
     if (knownEvidenceIds && !knownEvidenceIds.has(relationship.evidenceId)) {
       throw new ValidationError(`Claim-evidence relationship ${relationship.id} references unknown evidence ${relationship.evidenceId}.`);
     }
+    if (relationship.status === "ACTIVE" && activeLinkableEvidenceIds && !activeLinkableEvidenceIds.has(relationship.evidenceId)) {
+      throw new ValidationError(`Active claim-evidence relationship ${relationship.id} references removed or otherwise non-linkable evidence ${relationship.evidenceId}.`);
+    }
     if (relationship.status === "ACTIVE") {
       const pair = `${relationship.claimId}\u0000${relationship.evidenceId}`;
       if (activePairs.has(pair)) {
@@ -173,10 +180,13 @@ export function validateClaimLedger(ledger, { evidenceIds = null } = {}) {
   return ledger;
 }
 
-export function normalizeClaimLedger(ledger, { evidenceIds = null } = {}) {
+export function normalizeClaimLedger(ledger, {
+  evidenceIds = null,
+  linkableEvidenceIds = evidenceIds
+} = {}) {
   if (ledger == null) return createEmptyClaimLedger();
   const normalized = cloneValue(ledger);
-  validateClaimLedger(normalized, { evidenceIds });
+  validateClaimLedger(normalized, { evidenceIds, linkableEvidenceIds });
   return normalized;
 }
 
@@ -245,7 +255,10 @@ export function upsertClaimEvidenceRelationship(ledger, item, {
   evidenceIds = [],
   knownEvidenceIds = evidenceIds
 } = {}) {
-  validateClaimLedger(ledger, { evidenceIds: knownEvidenceIds });
+  validateClaimLedger(ledger, {
+    evidenceIds: knownEvidenceIds,
+    linkableEvidenceIds: evidenceIds
+  });
   requireObject(item, "Claim-evidence relationship input");
   const claim = ledger.claims.find((candidate) => candidate.id === item.claimId);
   if (!claim) throw new ValidationError("The linked claim does not exist.");

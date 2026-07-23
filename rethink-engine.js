@@ -931,7 +931,10 @@ export function normalizeProjectState(state) {
     };
   });
   normalized.claimLedger = normalizeClaimLedger(normalized.claimLedger, {
-    evidenceIds: normalized.evidence.map((item) => item.id)
+    evidenceIds: normalized.evidence.map((item) => item.id),
+    linkableEvidenceIds: normalized.evidence
+      .filter((item) => item.status === "ACTIVE" && ACTUAL_EVIDENCE_TYPES.includes(item.intakeType))
+      .map((item) => item.id)
   });
   const existingQuestions = Array.isArray(normalized.questions) ? normalized.questions : [];
   const questionTexts = [
@@ -1766,6 +1769,12 @@ function upsertEvidence(state, operation, at) {
   const evidence = existing
     ? state.evidence.map((candidate) => candidate.id === id ? updated : candidate)
     : [...state.evidence, updated];
+  const relationshipRetirement = isEvidence
+    ? { ledger: state.claimLedger, removed: [] }
+    : removeRelationshipsForEvidence(state.claimLedger, id, {
+        reason: `Evidence reclassified as non-linkable ${intakeType}: ${reason}`,
+        now: at
+      });
   const assumptions = state.assumptions.map((candidate) => {
     if (candidate.removedAt) return candidate;
     const links = new Set(candidate.evidenceIds || []);
@@ -1794,7 +1803,13 @@ function upsertEvidence(state, operation, at) {
     before: existing ? cloneValue(existing) : null,
     after: cloneValue(updated)
   };
-  return finishStateEdit({ ...state, assumptions, evidence, questions }, event, at);
+  return finishStateEdit({
+    ...state,
+    assumptions,
+    evidence,
+    questions,
+    claimLedger: relationshipRetirement.ledger
+  }, event, at);
 }
 
 function removeEvidence(state, operation, at) {
