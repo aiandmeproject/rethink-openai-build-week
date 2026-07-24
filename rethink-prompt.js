@@ -2,6 +2,7 @@ import { MODULE_IDS, modulePromptCatalog } from "./rethink-modules.js";
 import { domainProfilePromptContext } from "./rethink-domain-profiles.js";
 import { analyzeIndependentEvidenceChains } from "./rethink-provenance.js";
 import { analyzeTemporalIntegrity } from "./rethink-temporal.js";
+import { analyzeProjectReasoningIntegrity } from "./rethink-reasoning-integrity.js";
 
 const DOCTRINE = `Rethink is a routed reasoning architecture for managing uncertainty over the life of a problem.
 Its primary doctrine is: answer the unanswered question whose answer changes the greatest number of downstream decisions.
@@ -13,7 +14,9 @@ CLAIM SEMANTICS ARE EXPLICIT. A claim is an assertion to evaluate; an assumption
 
 PROVENANCE SEMANTICS ARE EXPLICIT. Evidence Lineage uses typed, directed relationships from a subject/child to an object/parent or referenced origin. DERIVED_FROM, SUMMARIZES, SYNDICATES, and REANALYZES are material dependencies that collapse to explicitly FOUNDATIONAL roots. CITES and REPLICATES do not by themselves prove derivation or independence. Unknown, missing, partial, or citation-only lineage remains unresolved; never infer independence from titles, URLs, publishers, authors, wording, or record counts. Synthetic or simulated lineage may remain traceable but is excluded from eligible real-world independent-chain counts.
 
-TEMPORAL SEMANTICS ARE EXPLICIT AND AS-OF BOUNDED. Use only stored Temporal Assessments and relationships; never infer CURRENT from a source date, retrieval date, newer wording, or missing state. A source may be historically valid but not current. Unknown temporal status is not evidence of current validity. A corrected or superseded source remains auditable but must not be silently represented as current. Temporal warnings do not automatically change claim status, evidence eligibility, proposition status, routing, or Human Gates.`;
+TEMPORAL SEMANTICS ARE EXPLICIT AND AS-OF BOUNDED. Use only stored Temporal Assessments and relationships; never infer CURRENT from a source date, retrieval date, newer wording, or missing state. A source may be historically valid but not current. Unknown temporal status is not evidence of current validity. A corrected or superseded source remains auditable but must not be silently represented as current. Temporal warnings do not automatically change claim status, evidence eligibility, proposition status, routing, or Human Gates.
+
+REASONING INTEGRITY IS CLAIM-SPECIFIC AND ADVISORY. A Claim must not exceed the demonstrated scope of its linked evidence without qualification. Multiple documents may represent one foundational evidence chain. Absence of detection is not evidence of absence unless detection capability was explicitly adequate. No recorded disconfirmation does not mean no disconfirmation exists. Technical failure and incomplete search are not substantive negative findings. Capability warnings never automatically change Claim status, Claim Ledger relationship meaning, project disposition, routing, proposition status, or Human Gates.`;
 
 export const ROUTER_INSTRUCTIONS = `${DOCTRINE}
 
@@ -156,6 +159,16 @@ function compactState(state, { asOf = state.updatedAt } = {}) {
   const lastCycleAt = [...trustedNotebook].reverse().find((entry) => entry.entryType === "CYCLE")?.timestamp || state.createdAt;
   const evidenceRegister = state.evidence.filter((item) => item.status === "ACTIVE" && item.evidenceAuthenticity !== "SYNTHETIC_SIMULATED");
   const syntheticTestData = state.evidence.filter((item) => item.status === "ACTIVE" && item.evidenceAuthenticity === "SYNTHETIC_SIMULATED");
+  const promptClaims = (state.claimLedger?.claims || []).slice(-30);
+  const promptClaimIds = new Set(promptClaims.map((item) => item.id));
+  const promptClaimRelationships = (state.claimLedger?.evidenceRelationships || [])
+    .filter((item) => item.status === "ACTIVE" && promptClaimIds.has(item.claimId))
+    .slice(-60);
+  const promptClaimLedger = {
+    version: state.claimLedger?.version || 1,
+    claims: promptClaims,
+    evidenceRelationships: promptClaimRelationships
+  };
   const provenanceEvidenceIds = [...evidenceRegister, ...syntheticTestData].map((item) => item.id);
   const provenanceLedger = relevantProvenanceLedger(state, provenanceEvidenceIds);
   const provenanceAnalysis = analyzeIndependentEvidenceChains(provenanceLedger, {
@@ -192,13 +205,39 @@ function compactState(state, { asOf = state.updatedAt } = {}) {
     asOf,
     purpose: "CURRENT_STATE"
   });
+  const promptClaimRelationshipIds = new Set(promptClaimRelationships.map((item) => item.id));
+  const reasoningIntegrityLedger = {
+    version: state.reasoningIntegrityLedger?.version || 1,
+    capabilityAssessments: (state.reasoningIntegrityLedger?.capabilityAssessments || [])
+      .filter((item) =>
+        item.status === "ACTIVE"
+        && promptClaimRelationshipIds.has(item.claimEvidenceRelationshipId)
+      )
+      .slice(-60)
+  };
+  const reasoningIntegrityAnalysis = analyzeProjectReasoningIntegrity({
+    reasoningIntegrityLedger,
+    claimLedger: promptClaimLedger,
+    provenanceLedger: state.provenanceLedger,
+    temporalLedger: state.temporalLedger,
+    evidenceItems: state.evidence,
+    linkableEvidenceIds: provenanceEvidenceIds,
+    eligibleEvidenceIds: evidenceRegister.map((item) => item.id),
+    asOf,
+    purpose: "CURRENT_STATE",
+    researchHistory: state.researchHistory || []
+  });
   const relevantTemporalAssessmentIds = new Set(temporalLedger.assessments.map((item) => item.id));
   const relevantTemporalRelationshipIds = new Set(temporalLedger.relationships.map((item) => item.id));
+  const relevantCapabilityAssessmentIds = new Set(
+    reasoningIntegrityLedger.capabilityAssessments.map((item) => item.id)
+  );
   const relevantStateEvents = (state.stateEvents || []).filter((event) =>
     (event.entityType !== "PROVENANCE_ARTIFACT" || relevantArtifactIds.has(event.entityId))
     && (event.entityType !== "PROVENANCE_RELATIONSHIP" || relevantRelationshipIds.has(event.entityId))
     && (event.entityType !== "TEMPORAL_ASSESSMENT" || relevantTemporalAssessmentIds.has(event.entityId))
     && (event.entityType !== "TEMPORAL_RELATIONSHIP" || relevantTemporalRelationshipIds.has(event.entityId))
+    && (event.entityType !== "CAPABILITY_ASSESSMENT" || relevantCapabilityAssessmentIds.has(event.entityId))
   );
   const relevantStateEventIds = new Set(relevantStateEvents.map((event) => event.id));
   const relevantNotebook = trustedNotebook.filter((entry) =>
@@ -213,13 +252,7 @@ function compactState(state, { asOf = state.updatedAt } = {}) {
     pecPhase: state.pecPhase,
     cycle: state.cycle,
     assumptions: state.assumptions.filter((item) => !item.removedAt).slice(-20),
-    claimLedger: {
-      version: state.claimLedger?.version || 1,
-      claims: (state.claimLedger?.claims || []).slice(-30),
-      evidenceRelationships: (state.claimLedger?.evidenceRelationships || [])
-        .filter((item) => item.status === "ACTIVE")
-        .slice(-60)
-    },
+    claimLedger: promptClaimLedger,
     provenanceLedger,
     provenanceAnalysis,
     temporalIntegrity: {
@@ -229,6 +262,13 @@ function compactState(state, { asOf = state.updatedAt } = {}) {
       derivedAnalysis: temporalAnalysis,
       interpretationWarning: "A source may be historically valid but not current; UNKNOWN is not CURRENT; corrected or superseded sources remain auditable."
     },
+    reasoningIntegrity: {
+      analysisAsOf: asOf,
+      analysisAsOfSource: asOf === state.updatedAt ? "PROJECT_UPDATED_AT" : "EXPLICIT_CALLER_VALUE",
+      storedLedger: reasoningIntegrityLedger,
+      derivedAnalysis: reasoningIntegrityAnalysis,
+      interpretationWarning: "Capability is claim-specific and advisory. No recorded disconfirmation does not mean no disconfirmation exists. Technical failure and incomplete search are not substantive negative findings. Warnings do not automatically change claim status or relationship meaning."
+    },
     evidenceRegister: evidenceRegister.slice(-40),
     syntheticTestDataForTraceOnly: syntheticTestData.slice(-20),
     routedNonEvidenceIntake: state.evidence.filter((item) => item.status === "ROUTED").slice(-20),
@@ -236,6 +276,7 @@ function compactState(state, { asOf = state.updatedAt } = {}) {
     lockedDecisions: state.lockedDecisions.slice(-5).map(({
       provenanceLedger: _provenanceLedger,
       temporalLedger: _temporalLedger,
+      reasoningIntegrityLedger: _reasoningIntegrityLedger,
       ...lock
     }) => lock),
     questionRegistry: (state.questions || []).slice(-40),

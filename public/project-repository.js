@@ -6,6 +6,7 @@ const LEGACY_DOMAIN_PROFILE = Object.freeze({ id: "BUSINESS", version: "1.0.0" }
 const EMPTY_CLAIM_LEDGER = Object.freeze({ version: 1, claims: [], evidenceRelationships: [] });
 const EMPTY_PROVENANCE_LEDGER = Object.freeze({ version: 1, artifacts: [], relationships: [] });
 const EMPTY_TEMPORAL_LEDGER = Object.freeze({ version: 1, assessments: [], relationships: [] });
+const EMPTY_REASONING_INTEGRITY_LEDGER = Object.freeze({ version: 1, capabilityAssessments: [] });
 
 export function hydrateLocalProjectSession(session) {
   if (!session?.state?.id) return null;
@@ -29,6 +30,10 @@ export function hydrateLocalProjectSession(session) {
         ...EMPTY_TEMPORAL_LEDGER,
         assessments: [],
         relationships: []
+      },
+      reasoningIntegrityLedger: session.state.reasoningIntegrityLedger ?? {
+        ...EMPTY_REASONING_INTEGRITY_LEDGER,
+        capabilityAssessments: []
       }
     }
   };

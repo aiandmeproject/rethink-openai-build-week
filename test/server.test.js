@@ -434,6 +434,112 @@ test("HTTP state management creates canonical temporal assessments and relations
   });
 });
 
+test("HTTP state management creates audited claim-specific Capability Assessments through the existing Core boundary", async () => {
+  await withServer(async (baseUrl) => {
+    let { state } = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "A contractor equipment claim needs an explicit capability assessment." })
+    }).then((response) => response.json());
+    assert.deepEqual(state.reasoningIntegrityLedger, {
+      version: 1,
+      capabilityAssessments: []
+    });
+
+    const manage = async (operation, expectedStatus = 200) => {
+      const response = await fetch(`${baseUrl}/api/rethink/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state, operation })
+      });
+      assert.equal(response.status, expectedStatus);
+      const payload = await response.json();
+      if (payload.state) state = payload.state;
+      return payload;
+    };
+
+    await manage({
+      type: "UPSERT_EVIDENCE",
+      reason: "Recorded the observed equipment result.",
+      item: {
+        claim: "The inspected equipment was operational during the recorded interval.",
+        intakeType: "TEST_RESULT",
+        provenanceOrigin: "USER_INPUT",
+        assessment: "Observed result for the named equipment only.",
+        reliability: "MODERATE",
+        relationship: "NONE_UNLINKED",
+        assumptionIds: [],
+        questionRefs: []
+      }
+    });
+    const evidenceId = state.evidence[0].id;
+    const claimPayload = await manage({
+      type: "UPSERT_CLAIM",
+      reason: "Recorded the claim that requires scope review.",
+      item: {
+        text: "All contractor equipment remains operational in every setting.",
+        type: "MATERIAL",
+        status: "UNKNOWN",
+        notes: ""
+      }
+    });
+    const relationshipPayload = await manage({
+      type: "UPSERT_CLAIM_EVIDENCE_RELATIONSHIP",
+      reason: "Linked the observed result to the broad claim.",
+      item: {
+        claimId: claimPayload.claim.id,
+        evidenceId,
+        relationship: "SUPPORTS",
+        notes: ""
+      }
+    });
+    const capability = await manage({
+      type: "UPSERT_CAPABILITY_ASSESSMENT",
+      reason: "Recorded the narrower population and setting capability.",
+      item: {
+        claimEvidenceRelationshipId: relationshipPayload.relationship.id,
+        overallFit: "PARTIAL",
+        scopeDimensions: [{
+          dimension: "GENERALIZABILITY",
+          claimScope: "All contractor equipment in every setting.",
+          evidenceScope: "One inspected item in one recorded setting.",
+          fitStatus: "MISMATCHED",
+          rationale: "The Evidence Item does not establish the claim's full generality."
+        }],
+        detectionMaterial: false,
+        detectionCapability: "NOT_APPLICABLE",
+        absenceInferenceStatus: "NOT_APPLICABLE",
+        rationale: "The Evidence Item bears only partially on the stated claim.",
+        notes: ""
+      }
+    });
+    assert.equal(capability.assessment.overallFit, "PARTIAL");
+    assert.equal(state.reasoningIntegrityLedger.capabilityAssessments.length, 1);
+    assert.equal(state.stateEvents.at(-1).entityType, "CAPABILITY_ASSESSMENT");
+    assert.equal(state.notebook.at(-1).entryType, "STATE_EDIT");
+    assert.equal(state.claimLedger.claims[0].status, "UNKNOWN");
+    assert.equal(state.claimLedger.evidenceRelationships[0].relationship, "SUPPORTS");
+
+    const invalidResponse = await fetch(`${baseUrl}/api/rethink/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state,
+        operation: {
+          type: "UPSERT_CAPABILITY_ASSESSMENT",
+          reason: "Attempted an invalid target reassignment.",
+          item: {
+            id: capability.assessment.id,
+            claimEvidenceRelationshipId: "missing_relationship"
+          }
+        }
+      })
+    });
+    assert.equal(invalidResponse.status, 400);
+    assert.match((await invalidResponse.json()).error.message, /cannot be reassigned/i);
+  });
+});
+
 test("static application is served", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(baseUrl);
@@ -468,6 +574,8 @@ test("health and module registry endpoints expose deployable runtime metadata", 
     assert.ok(!status.backgroundReasoningMethods.includes("DEFINE"));
     assert.equal(status.longReasoningMaxOutputTokens, 12000);
     assert.equal(status.defaultDomainProfile, "BUSINESS");
+    assert.equal(status.reasoningIntegrity.ledgerVersion, 1);
+    assert.deepEqual(status.reasoningIntegrity.analysisStatuses, ["RESOLVED", "PARTIAL", "UNRESOLVED"]);
     assert.deepEqual(status.domainProfiles.map((profile) => profile.id), ["BUSINESS", "GENERAL", "APPS", "NEWS"]);
     assert.deepEqual(status.domainProfiles.filter((profile) => profile.operational).map((profile) => profile.id), ["BUSINESS"]);
     assert.equal(status.domainProfiles.find((profile) => profile.id === "NEWS").availability, "PLANNED");

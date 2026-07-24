@@ -28,6 +28,10 @@ import {
   DomainProfileError,
   domainProfileStatusMetadata
 } from "./rethink-domain-profiles.js";
+import {
+  REASONING_INTEGRITY_ANALYSIS_STATUSES,
+  REASONING_INTEGRITY_LEDGER_VERSION
+} from "./rethink-reasoning-integrity.js";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(ROOT, "public");
@@ -478,6 +482,11 @@ export function createRuntime({
         researchRetryMaxOutputTokens: safeResearchRetryMaxOutputTokens,
         architecture: "Rethink Engine → Rethink Core → Domain Profile → PEC → STM → Evidence → Router → Module → State Update → Notebook → Disposition",
         persistence: "device-local-with-portable-backup",
+        reasoningIntegrity: {
+          ledgerVersion: REASONING_INTEGRITY_LEDGER_VERSION,
+          analysisStatuses: [...REASONING_INTEGRITY_ANALYSIS_STATUSES],
+          policy: "claim-specific-explicit-capability-with-advisory-analysis"
+        },
         defaultDomainProfile: DEFAULT_DOMAIN_PROFILE_ID,
         domainProfiles: domainProfileStatusMetadata(DOMAIN_PROFILE_REGISTRY),
         modules: REASONING_MODULE_REGISTRY.list().map((module) => ({

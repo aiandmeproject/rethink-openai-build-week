@@ -154,6 +154,44 @@ function renderTemporalIntegrity(temporal) {
   <p class="meta">Temporal status is explicit and evaluated relative to the displayed as-of timestamp. A source may be historically valid but not current. Unknown is not current. Temporal analysis does not by itself prove or disprove a claim.</p>`;
 }
 
+function renderReasoningIntegrity(reasoningIntegrity) {
+  const summary = reasoningIntegrity?.summary || {};
+  const analysis = reasoningIntegrity?.analysis || {};
+  const assessments = Array.isArray(reasoningIntegrity?.capabilityAssessments)
+    ? reasoningIntegrity.capabilityAssessments.filter((item) => item.status === "ACTIVE")
+    : [];
+  const claimAnalyses = Array.isArray(analysis.claimAnalyses) ? analysis.claimAnalyses : [];
+  const warnings = Array.isArray(analysis.warningCodes) ? analysis.warningCodes : [];
+  return `<div class="status-grid">
+    <div><span>Analysis as of</span><strong>${escapeHtml(reasoningIntegrity?.analysisAsOf || "Not recorded")}</strong></div>
+    <div><span>Analysis status</span><strong>${escapeHtml(readableEnum(analysis.analysisStatus))}</strong></div>
+    <div><span>Explicit claims</span><strong>${escapeHtml(summary.claimCount ?? 0)}</strong></div>
+    <div><span>Active capability assessments</span><strong>${escapeHtml(summary.activeAssessmentCount ?? 0)}</strong></div>
+    <div><span>Fit</span><strong>${escapeHtml(summary.fitCount ?? 0)}</strong></div>
+    <div><span>Partial fit</span><strong>${escapeHtml(summary.partialCount ?? 0)}</strong></div>
+    <div><span>Not fit</span><strong>${escapeHtml(summary.notFitCount ?? 0)}</strong></div>
+    <div><span>Unknown fit</span><strong>${escapeHtml(summary.unknownFitCount ?? 0)}</strong></div>
+    <div><span>Integrity warnings</span><strong>${escapeHtml(summary.warningCount ?? 0)}</strong></div>
+    <div><span>Synthetic / ineligible evidence</span><strong>${escapeHtml(summary.syntheticOrIneligibleEvidenceCount ?? 0)}</strong></div>
+  </div>
+  ${assessments.length ? `<h3>Active Capability Assessments</h3><ul>${assessments.map((item) => {
+    const dimensions = (item.scopeDimensions || [])
+      .map((dimension) => `${readableEnum(dimension.dimension)}: ${readableEnum(dimension.fitStatus)}`)
+      .join(", ");
+    return `<li><strong>${escapeHtml(item.claimEvidenceRelationshipId)}</strong> - ${escapeHtml(readableEnum(item.overallFit))}; detection ${escapeHtml(readableEnum(item.detectionCapability))}; absence inference ${escapeHtml(readableEnum(item.absenceInferenceStatus))}${dimensions ? `; scope ${escapeHtml(dimensions)}` : ""}</li>`;
+  }).join("")}</ul>` : '<p class="empty">No active claim-specific Capability Assessment is recorded.</p>'}
+  ${claimAnalyses.length ? `<h3>Claim-Level Integrity</h3>${claimAnalyses.map((item) => `<article class="claim-item">
+    <h4>${escapeHtml(item.claimId)}</h4>
+    <p><strong>Stored claim status:</strong> ${escapeHtml(readableEnum(item.claimStatus))}<br>
+    <strong>Analysis status:</strong> ${escapeHtml(readableEnum(item.analysisStatus))}<br>
+    <strong>Disconfirmation coverage:</strong> ${escapeHtml(readableEnum(item.disconfirmationCoverage?.status))}</p>
+    <p>Supporting Evidence Items: ${escapeHtml(item.independentChains?.SUPPORTS?.evidenceItemCount ?? 0)}; known independent supporting roots: ${escapeHtml(item.independentChains?.SUPPORTS?.knownIndependentFoundationalRootCount ?? 0)}.</p>
+    ${(item.integrityWarnings || []).length ? `<p><strong>Warnings:</strong> ${escapeHtml(item.integrityWarnings.join(", "))}</p>` : '<p class="empty">No claim-level integrity warning is present.</p>'}
+  </article>`).join("")}` : '<p class="empty">No explicit claim is available for claim-level Reasoning Integrity analysis.</p>'}
+  ${warnings.length ? `<p><strong>Project warning codes:</strong> ${escapeHtml(warnings.join(", "))}</p>` : '<p class="empty">No project-level Reasoning Integrity warning is present.</p>'}
+  <p class="meta">Capability is claim-specific. Evidence Item count is not independent-chain count. No recorded disconfirmation is not proof that no contradiction exists. This advisory analysis does not automatically validate, contradict, or rewrite a claim.</p>`;
+}
+
 function collectReferences(report) {
   const references = [];
   const seen = new Set();
@@ -226,6 +264,7 @@ export function renderProjectReportHtml(report) {
 <section><h2>Core Claim Ledger</h2>${renderClaimLedger(report?.claimLedger)}</section>
 <section><h2>Evidence Lineage / Provenance</h2>${renderProvenance(report?.provenance)}</section>
 <section><h2>Temporal Integrity</h2>${renderTemporalIntegrity(report?.temporalIntegrity)}</section>
+<section><h2>Reasoning Integrity</h2>${renderReasoningIntegrity(report?.reasoningIntegrity)}</section>
 <section><h2>Proposition Status</h2><div class="status-grid">
   <div><span>Proposition</span><strong>${escapeHtml(readableEnum(status.status))}</strong></div>
   <div><span>Validation process</span><strong>${escapeHtml(readableEnum(status.validationProcessStatus))}</strong></div>
