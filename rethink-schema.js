@@ -590,6 +590,12 @@ export function validateProjectState(state) {
       throw new ValidationError("state.temporalLedger must contain an integer version plus assessments and relationships arrays.");
     }
   }
+  if (state.reasoningIntegrityLedger != null) {
+    requireObject(state.reasoningIntegrityLedger, "state.reasoningIntegrityLedger");
+    if (!Number.isInteger(state.reasoningIntegrityLedger.version) || !Array.isArray(state.reasoningIntegrityLedger.capabilityAssessments)) {
+      throw new ValidationError("state.reasoningIntegrityLedger must contain an integer version plus a capabilityAssessments array.");
+    }
+  }
   for (const field of ["humanGates", "humanDecisions", "stageOverrides", "questions", "researchHistory"]) {
     if (state[field] != null && !Array.isArray(state[field])) {
       throw new ValidationError(`state.${field} must be an array when present.`);

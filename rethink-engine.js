@@ -56,6 +56,14 @@ import {
   upsertTemporalAssessment as upsertTemporalAssessmentRecord,
   upsertTemporalRelationship as upsertTemporalRelationshipRecord
 } from "./rethink-temporal.js";
+import {
+  analyzeClaimReasoningIntegrity,
+  analyzeProjectReasoningIntegrity as analyzeReasoningIntegrityProject,
+  createEmptyReasoningIntegrityLedger,
+  normalizeReasoningIntegrityLedger,
+  removeCapabilityAssessment as removeCapabilityAssessmentRecord,
+  upsertCapabilityAssessment as upsertCapabilityAssessmentRecord
+} from "./rethink-reasoning-integrity.js";
 
 const SAMPLE_PATTERN = /florida[\s\S]*disabled veterans|disabled veterans[\s\S]*florida/i;
 
@@ -208,6 +216,7 @@ export function initializeProject(input, {
     claimLedger: createEmptyClaimLedger(),
     provenanceLedger: createEmptyProvenanceLedger(),
     temporalLedger: createEmptyTemporalLedger(),
+    reasoningIntegrityLedger: createEmptyReasoningIntegrityLedger(),
     lockedDecisions: [],
     tangents: [],
     notebook: [],
@@ -981,6 +990,10 @@ export function normalizeProjectState(state) {
     evidenceIds: normalized.evidence.map((item) => item.id),
     artifactIds: normalized.provenanceLedger.artifacts.map((item) => item.id)
   });
+  normalized.reasoningIntegrityLedger = normalizeReasoningIntegrityLedger(
+    normalized.reasoningIntegrityLedger,
+    { claimEvidenceRelationships: normalized.claimLedger.evidenceRelationships }
+  );
   const existingQuestions = Array.isArray(normalized.questions) ? normalized.questions : [];
   const questionTexts = [
     ...existingQuestions.map((item) => item.text),
@@ -1054,6 +1067,7 @@ export function createNotebookExport(state, { now = new Date() } = {}) {
     claimLedger: cloneValue(normalized.claimLedger),
     provenanceLedger: cloneValue(normalized.provenanceLedger),
     temporalLedger: cloneValue(normalized.temporalLedger),
+    reasoningIntegrityLedger: cloneValue(normalized.reasoningIntegrityLedger),
     lockedVersions: cloneValue(normalized.lockedDecisions)
   };
 }
@@ -1394,6 +1408,7 @@ export function lockProjectState(state, { note = "", now = new Date() } = {}) {
     claimLedger: cloneValue(state.claimLedger),
     provenanceLedger: cloneValue(state.provenanceLedger),
     temporalLedger: cloneValue(state.temporalLedger),
+    reasoningIntegrityLedger: cloneValue(state.reasoningIntegrityLedger),
     highestLeverageQuestion: latestTrustedCycle?.highestLeverageQuestion || "",
     reopeningTrigger: "",
     reopeningReason: "",
@@ -2571,6 +2586,81 @@ function removeProjectTemporalRelationship(state, operation, at) {
   };
 }
 
+function upsertProjectCapabilityAssessment(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = upsertCapabilityAssessmentRecord(
+    state.reasoningIntegrityLedger,
+    operation.item || {},
+    {
+      now: at,
+      claimEvidenceRelationships: state.claimLedger.evidenceRelationships
+    }
+  );
+  if (result.unchanged) {
+    return {
+      state,
+      event: null,
+      notebookEntry: null,
+      assessment: result.assessment,
+      unchanged: true
+    };
+  }
+  const event = {
+    id: makeId("event", at),
+    entityType: "CAPABILITY_ASSESSMENT",
+    entityId: result.assessment.id,
+    action: result.action,
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `${result.action === "CREATED" ? "Added" : "Updated"} ${result.assessment.overallFit.toLowerCase().replaceAll("_", " ")} capability assessment for Claim Ledger relationship ${result.assessment.claimEvidenceRelationshipId}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.assessment)
+  };
+  return {
+    ...finishStateEdit(
+      { ...state, reasoningIntegrityLedger: result.ledger },
+      event,
+      at
+    ),
+    assessment: result.assessment,
+    unchanged: false
+  };
+}
+
+function removeProjectCapabilityAssessment(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = removeCapabilityAssessmentRecord(
+    state.reasoningIntegrityLedger,
+    operation.id,
+    {
+      reason,
+      now: at,
+      claimEvidenceRelationships: state.claimLedger.evidenceRelationships
+    }
+  );
+  const event = {
+    id: makeId("event", at),
+    entityType: "CAPABILITY_ASSESSMENT",
+    entityId: result.assessment.id,
+    action: "REMOVED",
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `Retired the Capability Assessment for Claim Ledger relationship ${result.assessment.claimEvidenceRelationshipId}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.assessment)
+  };
+  return {
+    ...finishStateEdit(
+      { ...state, reasoningIntegrityLedger: result.ledger },
+      event,
+      at
+    ),
+    assessment: result.assessment
+  };
+}
+
 export function manageProjectState(state, operation, { now = new Date() } = {}) {
   state = normalizeProjectState(state);
   if (!operation || typeof operation !== "object") {
@@ -2591,6 +2681,8 @@ export function manageProjectState(state, operation, { now = new Date() } = {}) 
     case "REMOVE_TEMPORAL_ASSESSMENT": return removeProjectTemporalAssessment(state, operation, now);
     case "UPSERT_TEMPORAL_RELATIONSHIP": return upsertProjectTemporalRelationship(state, operation, now);
     case "REMOVE_TEMPORAL_RELATIONSHIP": return removeProjectTemporalRelationship(state, operation, now);
+    case "UPSERT_CAPABILITY_ASSESSMENT": return upsertProjectCapabilityAssessment(state, operation, now);
+    case "REMOVE_CAPABILITY_ASSESSMENT": return removeProjectCapabilityAssessment(state, operation, now);
     case "REOPEN_LOCK": return reopenLock(state, operation, now);
     case "RESOLVE_HUMAN_GATE": return resolveHumanGate(state, operation, now);
     case "OVERRIDE_DISPOSITION": return overrideDisposition(state, operation, now);
@@ -2656,6 +2748,18 @@ function temporalAnalysisContext(state) {
   };
 }
 
+function reasoningIntegrityAnalysisContext(state) {
+  return {
+    reasoningIntegrityLedger: state.reasoningIntegrityLedger,
+    claimLedger: state.claimLedger,
+    provenanceLedger: state.provenanceLedger,
+    temporalLedger: state.temporalLedger,
+    evidenceItems: state.evidence,
+    linkableEvidenceIds: linkableClaimEvidenceIds(state),
+    eligibleEvidenceIds: actualEvidence(state).map((item) => item.id)
+  };
+}
+
 export function analyzeProjectTemporalTarget(state, {
   targetType,
   targetId,
@@ -2697,6 +2801,33 @@ export function analyzeProjectClaimTemporalIntegrity(state, {
     claimId,
     asOf,
     purpose
+  });
+}
+
+export function analyzeProjectClaimReasoningIntegrity(state, {
+  claimId,
+  asOf,
+  purpose = "CURRENT_STATE"
+}) {
+  state = normalizeProjectState(state);
+  return analyzeClaimReasoningIntegrity({
+    ...reasoningIntegrityAnalysisContext(state),
+    claimId,
+    asOf,
+    purpose
+  });
+}
+
+export function analyzeProjectReasoningIntegrity(state, {
+  asOf,
+  purpose = "CURRENT_STATE"
+}) {
+  state = normalizeProjectState(state);
+  return analyzeReasoningIntegrityProject({
+    ...reasoningIntegrityAnalysisContext(state),
+    asOf,
+    purpose,
+    researchHistory: state.researchHistory
   });
 }
 
@@ -2824,6 +2955,38 @@ function createTemporalReport(state, asOf) {
   };
 }
 
+function createReasoningIntegrityReport(state, asOf) {
+  const analysis = analyzeReasoningIntegrityProject({
+    ...reasoningIntegrityAnalysisContext(state),
+    asOf,
+    purpose: "CURRENT_STATE",
+    researchHistory: state.researchHistory
+  });
+  const activeAssessments = state.reasoningIntegrityLedger.capabilityAssessments
+    .filter((item) => item.status === "ACTIVE");
+  return {
+    version: state.reasoningIntegrityLedger.version,
+    interpretationPolicy: "EXPLICIT_CAPABILITY_STATE_AND_ADVISORY_ANALYSIS_WITHOUT_AUTOMATIC_CLAIM_OR_RELATIONSHIP_MUTATION",
+    analysisAsOf: asOf,
+    capabilityAssessments: state.reasoningIntegrityLedger.capabilityAssessments
+      .map((item) => cloneValue(item)),
+    analysis,
+    summary: {
+      assessmentCount: state.reasoningIntegrityLedger.capabilityAssessments.length,
+      activeAssessmentCount: activeAssessments.length,
+      fitCount: activeAssessments.filter((item) => item.overallFit === "FIT").length,
+      partialCount: activeAssessments.filter((item) => item.overallFit === "PARTIAL").length,
+      notFitCount: activeAssessments.filter((item) => item.overallFit === "NOT_FIT").length,
+      unknownFitCount: activeAssessments.filter((item) => item.overallFit === "UNKNOWN").length,
+      claimCount: analysis.totalExplicitClaims,
+      warningCount: analysis.warningCodes.length,
+      syntheticOrIneligibleEvidenceCount: new Set(
+        analysis.claimAnalyses.flatMap((item) => item.syntheticOrIneligibleEvidenceIds)
+      ).size
+    }
+  };
+}
+
 /**
  * Produces a conservative, structured business report from the persisted project
  * record. The report never upgrades an assumption into a finding merely because
@@ -2893,6 +3056,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
   };
   const provenanceReport = createProvenanceReport(state);
   const temporalReport = createTemporalReport(state, reportGeneratedAt);
+  const reasoningIntegrityReport = createReasoningIntegrityReport(state, reportGeneratedAt);
   const propositionStatus = evidence.length === 0
     ? "INSUFFICIENT_EVIDENCE"
     : (evaluation?.propositionStatus || "UNRESOLVED");
@@ -2915,6 +3079,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
     claimLedger: claimLedgerReport,
     provenance: provenanceReport,
     temporalIntegrity: temporalReport,
+    reasoningIntegrity: reasoningIntegrityReport,
     currentDisposition: {
       systemRecommendation: lastCycle?.disposition || state.currentDisposition,
       humanDisposition: latestHumanDecision?.humanDisposition || "",
@@ -2994,6 +3159,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
       ...(evaluation?.disconfirmation?.flag === "DISCONFIRMATION_SEARCH_INCOMPLETE" ? ["A documented attempt to find disconfirming evidence is incomplete."] : []),
       ...(poorApplicability.length ? ["Some evidence has unknown, broad, or poorly matched population applicability."] : []),
       ...(syntheticOrSimulated.length ? ["Synthetic or simulated test results remain traceable but are excluded from real-world proposition validation."] : []),
+      ...reasoningIntegrityReport.analysis.warningCodes,
       ...(provenanceReport.summary.unresolvedEvidenceCount
         ? [`${provenanceReport.summary.unresolvedEvidenceCount} active evidence item${provenanceReport.summary.unresolvedEvidenceCount === 1 ? " has" : "s have"} unresolved or partial provenance and is not treated as a known independent source chain.`]
         : []),

@@ -25,7 +25,8 @@ test("device-local repository persists and clears an isolated project session", 
     domainProfileVersion: "1.0.0",
     claimLedger: { version: 1, claims: [], evidenceRelationships: [] },
     provenanceLedger: { version: 1, artifacts: [], relationships: [] },
-    temporalLedger: { version: 1, assessments: [], relationships: [] }
+    temporalLedger: { version: 1, assessments: [], relationships: [] },
+    reasoningIntegrityLedger: { version: 1, capabilityAssessments: [] }
   });
   repository.clearSession();
   assert.equal(repository.loadSession(), null);
@@ -42,6 +43,7 @@ test("device-local repository migrates the legacy single-project key", () => {
   assert.deepEqual(repository.loadSession().state.claimLedger, { version: 1, claims: [], evidenceRelationships: [] });
   assert.deepEqual(repository.loadSession().state.provenanceLedger, { version: 1, artifacts: [], relationships: [] });
   assert.deepEqual(repository.loadSession().state.temporalLedger, { version: 1, assessments: [], relationships: [] });
+  assert.deepEqual(repository.loadSession().state.reasoningIntegrityLedger, { version: 1, capabilityAssessments: [] });
   assert.equal(storage.has("rethink.project.v0.1"), false);
   assert.equal(storage.has("rethink.workspace.v0.1"), true);
 });
@@ -126,7 +128,7 @@ test("version 2 backup restores a complete project across independent browser or
     }
   });
   state = claimResult.state;
-  state = runtime.manageState({
+  const claimRelationshipResult = runtime.manageState({
     state,
     operation: {
       type: "UPSERT_CLAIM_EVIDENCE_RELATIONSHIP",
@@ -135,6 +137,30 @@ test("version 2 backup restores a complete project across independent browser or
         claimId: claimResult.claim.id,
         evidenceId: state.evidence[0].id,
         relationship: "SUPPORTS"
+      }
+    }
+  });
+  state = claimRelationshipResult.state;
+  state = runtime.manageState({
+    state,
+    operation: {
+      type: "UPSERT_CAPABILITY_ASSESSMENT",
+      reason: "Portable claim-specific capability coverage.",
+      item: {
+        claimEvidenceRelationshipId: claimRelationshipResult.relationship.id,
+        overallFit: "FIT",
+        scopeDimensions: [{
+          dimension: "POPULATION",
+          claimScope: "The observed condition in the recorded population.",
+          evidenceScope: "The observed condition in the recorded population.",
+          fitStatus: "MATCHED",
+          rationale: "The claim and evidence use the same explicitly recorded population."
+        }],
+        detectionMaterial: false,
+        detectionCapability: "NOT_APPLICABLE",
+        absenceInferenceStatus: "NOT_APPLICABLE",
+        rationale: "The Evidence Item is capable of bearing on the linked claim.",
+        notes: ""
       }
     }
   }).state;
@@ -181,6 +207,8 @@ test("version 2 backup restores a complete project across independent browser or
   assert.deepEqual(restored.state.temporalLedger, completed.state.temporalLedger);
   assert.equal(restored.state.temporalLedger.assessments.length, 1);
   assert.equal(restored.state.temporalLedger.relationships.length, 0);
+  assert.deepEqual(restored.state.reasoningIntegrityLedger, completed.state.reasoningIntegrityLedger);
+  assert.equal(restored.state.reasoningIntegrityLedger.capabilityAssessments.length, 1);
   assert.deepEqual(restored.state.questions, completed.state.questions);
   assert.equal(restored.state.notebook.length, completed.state.notebook.length);
   assert.equal(restored.state.domainProfile, "BUSINESS");
