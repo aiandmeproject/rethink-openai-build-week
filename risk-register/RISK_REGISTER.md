@@ -244,3 +244,177 @@ Final verification:
 - v1 backup import
 - v2 backup import
 - Historical relationship preservation
+
+## Risk 3 — Foundational Provenance Artifact Could Retain Active Material Ancestry
+
+**Risk ID:** RISK-003
+
+**Category:** Data Integrity / Provenance Ledger / Independent Evidence Chains
+
+**Status:** CLOSED
+
+**Identified During:** Branch 3 — `core/provenance-integrity` final architectural audit
+
+**Severity:** High
+
+**Likelihood Before Correction:** Material / reachable through normal Core operations, project normalization, and v1/v2 backup import
+
+### Description
+
+The Provenance Ledger uses both:
+
+1. an explicit artifact origin role:
+   - `FOUNDATIONAL`
+   - `DERIVATIVE`
+   - `UNKNOWN`
+2. directional material-dependency relationships:
+   - `DERIVED_FROM`
+   - `SUMMARIZES`
+   - `SYNDICATES`
+   - `REANALYZES`
+
+A `FOUNDATIONAL` artifact represents an explicitly identified evidence-generation root.
+
+An active material-dependency relationship in which that artifact is the subject or child states that the artifact depends upon an upstream source.
+
+Before correction, the system allowed both statements to exist simultaneously.
+
+```text
+Artifact A:
+originRole: FOUNDATIONAL
+
+Relationship:
+Artifact A DERIVED_FROM Artifact B
+```
+
+This state was semantically contradictory.
+
+### Failure Scenario
+
+```text
+Artifact A is marked FOUNDATIONAL
+    ↓
+Artifact A has active material ancestry to Artifact B
+    ↓
+Independent Evidence Chain analysis stops at Artifact A
+    ↓
+Artifact A is returned as the foundational root
+    ↓
+Artifact B and the true upstream ancestry are ignored
+    ↓
+No integrity warning is emitted
+```
+
+### Potential Impact
+
+The contradiction could cause source-lineage analysis to terminate too early, misidentify a derivative artifact as an independent foundational origin, suppress actual upstream ancestry, and inflate or distort Independent Evidence Chain conclusions.
+
+### Verification Result
+
+The final Branch 3 audit confirmed that, before correction:
+
+- canonical Provenance Ledger validation accepted the conflict;
+- project normalization accepted the conflict;
+- v1 backup import accepted the conflict;
+- v2 backup import accepted the conflict;
+- normal Core/API operations could add active material ancestry to an existing `FOUNDATIONAL` artifact;
+- normal Core/API operations could change an artifact with active material ancestry to `FOUNDATIONAL`;
+- Independent Evidence Chain analysis stopped at the contradictory `FOUNDATIONAL` artifact;
+- the upstream parent was ignored;
+- no warning was emitted.
+
+### Resolution
+
+The Provenance Ledger now enforces this invariant:
+
+An artifact marked `FOUNDATIONAL` cannot be the subject or child of an active:
+
+- `DERIVED_FROM`
+- `SUMMARIZES`
+- `SYNDICATES`
+- `REANALYZES`
+
+A `FOUNDATIONAL` artifact may still:
+
+- be the object or parent of a material-dependency relationship;
+- participate in `CITES` relationships;
+- participate in `REPLICATES` relationships;
+- become `FOUNDATIONAL` after its material-dependency relationship has been soft-removed.
+
+Removed historical relationships remain intact and do not impose active ancestry constraints.
+
+The correction does not:
+
+- automatically rewrite an artifact’s origin role;
+- automatically remove a relationship;
+- fabricate ancestry;
+- erase historical records.
+
+Conflicting canonical state now fails closed before Independent Evidence Chain analysis occurs.
+
+### Validation Path
+
+The invariant is enforced through `validateProvenanceLedger()` in `rethink-provenance.js`.
+
+That validation boundary is reached through:
+
+- provenance relationship creation and update;
+- provenance artifact creation and update;
+- `normalizeProvenanceLedger()`;
+- `normalizeProjectState()`;
+- v1 backup import;
+- v2 backup import;
+- existing Core/API state operations.
+
+### Automated Verification
+
+Focused regression coverage proves:
+
+- canonical validation rejects the conflict;
+- project normalization rejects the conflict;
+- v1 backup import rejects the conflict;
+- v2 backup import rejects the conflict;
+- chain analysis cannot proceed with the contradictory state;
+- adding material ancestry to a `FOUNDATIONAL` artifact fails closed;
+- changing an artifact with active material ancestry to `FOUNDATIONAL` fails closed;
+- `FOUNDATIONAL` artifacts may still be material parents;
+- `CITES` remains permitted;
+- `REPLICATES` remains permitted;
+- removed historical material ancestry does not block a later `FOUNDATIONAL` role.
+
+Final verification:
+
+- Focused Provenance tests: 18 passed, 0 failed
+- Full automated suite: 137 passed, 0 failed
+- Smoke test: `home → project → route → cycle → notebook` passed
+- `git diff --check`: passed
+- Encoding scan: passed
+- Normalization conflict reproduction: rejected
+- v1 import conflict reproduction: rejected
+- v2 import conflict reproduction: rejected
+- Core/API conflict operations: rejected
+
+### Resolution History
+
+| Step | Resolution history |
+| --- | --- |
+| 1 | The issue was discovered during the final Branch 3 architectural review. |
+| 2 | Audit confirmed a real semantic-integrity defect affecting validation, normalization, v1/v2 import, normal Core operations, and Independent Evidence Chain traversal. |
+| 3 | Production validation was corrected to prohibit active material ancestry from a `FOUNDATIONAL` artifact. |
+| 4 | Historical soft-removed relationships remain preserved and do not impose current ancestry constraints. |
+| 5 | Focused regression coverage was added. |
+| 6 | All 137 automated tests, smoke testing, encoding checks, and `git diff --check` passed. |
+| 7 | Risk #3 was `CLOSED` before Branch 3 merge. |
+
+### Related Components
+
+- `rethink-provenance.js`
+- Provenance Ledger
+- Provenance artifacts
+- Material-dependency relationships
+- Independent Evidence Chain analysis
+- Project normalization
+- Core state operations
+- v1 backup import
+- v2 backup import
+- Historical lineage preservation

@@ -92,6 +92,29 @@ function renderClaimLedger(ledger) {
   }).join("")}<p class="meta">Claim statuses are explicit project state and are not calculated from relationship counts.</p>`;
 }
 
+function renderProvenance(provenance) {
+  const summary = provenance?.summary || {};
+  const analysis = provenance?.analysis || {};
+  const artifacts = Array.isArray(provenance?.artifacts) ? provenance.artifacts : [];
+  const unresolved = Array.isArray(analysis.unresolvedEvidenceIds) ? analysis.unresolvedEvidenceIds : [];
+  const citationWarnings = Array.isArray(analysis.citationCycleWarnings) ? analysis.citationCycleWarnings : [];
+  return `<div class="status-grid">
+    <div><span>Provenance artifacts</span><strong>${escapeHtml(summary.artifactCount ?? 0)}</strong></div>
+    <div><span>Evidence Items analyzed</span><strong>${escapeHtml(summary.evidenceAnalyzedCount ?? 0)}</strong></div>
+    <div><span>Known eligible independent chains</span><strong>${escapeHtml(summary.knownIndependentChainCount ?? 0)}</strong></div>
+    <div><span>Evidence with unresolved / partial origin</span><strong>${escapeHtml(summary.unresolvedEvidenceCount ?? 0)}</strong></div>
+    <div><span>Active derivative relationships</span><strong>${escapeHtml(summary.derivativeRelationshipCount ?? 0)}</strong></div>
+    <div><span>Citation-cycle warnings</span><strong>${escapeHtml(summary.citationCycleCount ?? 0)}</strong></div>
+    <div><span>Synthetic / ineligible evidence</span><strong>${escapeHtml(summary.syntheticOrOtherwiseIneligibleEvidenceCount ?? 0)}</strong></div>
+  </div>
+  ${artifacts.length ? `<h3>Recorded Source / Origin Artifacts</h3><ul>${artifacts.map((item) =>
+    `<li><strong>${escapeHtml(item.title)}</strong> — ${escapeHtml(readableEnum(item.kind))}; ${escapeHtml(readableEnum(item.originRole))}${item.publisher ? `; ${escapeHtml(item.publisher)}` : ""}</li>`
+  ).join("")}</ul>` : '<p class="empty">No explicit source or origin artifacts are recorded.</p>'}
+  ${unresolved.length ? `<p><strong>Unresolved evidence IDs:</strong> ${escapeHtml(unresolved.join(", "))}</p>` : ""}
+  ${citationWarnings.length ? '<p class="meta">Citation cycles are retained as warnings. They do not establish derivation or source independence.</p>' : ""}
+  <p class="meta">Chain counts are derived from explicit material lineage to FOUNDATIONAL artifacts. They are not stored conclusions and do not validate any proposition.</p>`;
+}
+
 function collectReferences(report) {
   const references = [];
   const seen = new Set();
@@ -162,6 +185,7 @@ export function renderProjectReportHtml(report) {
 </div></section>
 <section><h2>Key Findings</h2>${renderList(report?.keyFindings, "No material finding has been established.")}</section>
 <section><h2>Core Claim Ledger</h2>${renderClaimLedger(report?.claimLedger)}</section>
+<section><h2>Evidence Lineage / Provenance</h2>${renderProvenance(report?.provenance)}</section>
 <section><h2>Proposition Status</h2><div class="status-grid">
   <div><span>Proposition</span><strong>${escapeHtml(readableEnum(status.status))}</strong></div>
   <div><span>Validation process</span><strong>${escapeHtml(readableEnum(status.validationProcessStatus))}</strong></div>

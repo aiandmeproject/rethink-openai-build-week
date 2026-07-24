@@ -250,6 +250,85 @@ test("HTTP state management creates claims and canonical evidence relationships 
   });
 });
 
+test("HTTP state management creates canonical provenance artifacts and relationships through the existing Core boundary", async () => {
+  await withServer(async (baseUrl) => {
+    let payload = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "A source-linked observation needs explicit provenance through the current API." })
+    }).then((response) => response.json());
+    assert.deepEqual(payload.state.provenanceLedger, { version: 1, artifacts: [], relationships: [] });
+
+    payload = await fetch(`${baseUrl}/api/rethink/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state: payload.state,
+        operation: {
+          type: "UPSERT_EVIDENCE",
+          reason: "Created the Evidence Item endpoint for provenance API coverage.",
+          item: {
+            claim: "A bounded observation was recorded.",
+            intakeType: "TEST_RESULT",
+            provenanceOrigin: "USER_INPUT",
+            reliability: "MODERATE",
+            relationship: "NONE_UNLINKED",
+            assessment: "API provenance fixture.",
+            assumptionIds: [],
+            questionRefs: []
+          }
+        }
+      })
+    }).then((response) => response.json());
+    const evidenceId = payload.state.evidence[0].id;
+
+    const artifactResponse = await fetch(`${baseUrl}/api/rethink/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state: payload.state,
+        operation: {
+          type: "UPSERT_PROVENANCE_ARTIFACT",
+          reason: "Recorded a source artifact through the existing reducer API.",
+          item: {
+            title: "API foundational test record",
+            kind: "TEST",
+            originRole: "FOUNDATIONAL",
+            sourceLocator: "record://api/test-1"
+          }
+        }
+      })
+    });
+    assert.equal(artifactResponse.status, 200);
+    payload = await artifactResponse.json();
+
+    const relationshipResponse = await fetch(`${baseUrl}/api/rethink/state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        state: payload.state,
+        operation: {
+          type: "UPSERT_PROVENANCE_RELATIONSHIP",
+          reason: "Recorded explicit Evidence Lineage through the existing reducer API.",
+          item: {
+            subjectType: "EVIDENCE_ITEM",
+            subjectId: evidenceId,
+            objectType: "PROVENANCE_ARTIFACT",
+            objectId: payload.artifact.id,
+            relationship: "DERIVED_FROM"
+          }
+        }
+      })
+    });
+    assert.equal(relationshipResponse.status, 200);
+    const linked = await relationshipResponse.json();
+    assert.equal(linked.state.provenanceLedger.artifacts.length, 1);
+    assert.equal(linked.state.provenanceLedger.relationships.length, 1);
+    assert.equal(linked.state.stateEvents.at(-1).entityType, "PROVENANCE_RELATIONSHIP");
+    assert.equal(linked.state.notebook.at(-1).entryType, "STATE_EDIT");
+  });
+});
+
 test("static application is served", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(baseUrl);
