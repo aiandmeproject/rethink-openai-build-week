@@ -181,6 +181,18 @@ Reason-gated reducer operations create/update and soft-remove Capability Assessm
 
 Source weighting, credibility scoring, automatic claim-confidence/status proposals, profile-specific capability rules, autonomous disconfirmation research, and the full Evidence-Origin Audit remain deferred to later Core work.
 
+### BUSINESS profile integrity overlay
+
+`rethink-business-integrity.js` defines the versioned `BUSINESS_INTEGRITY` `1.0.0` policy registered only with the active `BUSINESS` Domain Profile. The policy prioritizes Core scope dimensions such as population, geography, setting, condition, time, endpoint, and generalizability, while accepting optional extensible business dimensions such as customer segment, industry, company size, business model, sales channel, price point, purchase intent, revenue, cost, and operating context. Missing optional dimensions are not canonical-state errors.
+
+Business Integrity is a deterministic read-only profile projection, not a fifth ledger or a second reasoning engine. It consumes the existing project and claim Reasoning Integrity analysis, which already composes the Claim, Provenance, Temporal, and Capability state. The overlay selects and interprets relevant Core warnings, reports Evidence Item count separately from known independent foundational-chain count, and surfaces unresolved market/customer/geography/time/endpoint scope, detection and absence-inference limits, origin, temporal applicability, disconfirmation coverage, synthetic/ineligible support, public-evidence limits, and existing Human / Real-World requirements.
+
+Bounded Business rules preserve material evidence distinctions: awareness, interest, engagement, clicks, downloads, search activity, or survey intent do not establish purchases; revenue does not establish profitability; broad market data does not establish a narrow customer segment; and public estimates do not establish private customer, operational, or financial outcomes. These are advisory warnings and prompt/report guidance, not automatic truth conclusions. They never rewrite a Claim, Claim Ledger relationship, proposition status, route, evidence eligibility, project disposition, Human Gate, or human decision.
+
+BUSINESS prompts receive the policy version, concise guidance, and a bounded derived review. BUSINESS reports receive a concise integrity section showing the explicit analysis time, major warnings, scope/proxy boundaries, Evidence Item and independent-chain counts, temporal/provenance/disconfirmation state, public/private boundary, and existing real-world requirements. No viability score, confidence percentage, success probability, investment recommendation, or automatic GO / NO-GO exists. `GENERAL`, `APPS`, and `NEWS` remain known but unavailable and do not receive the policy, vocabulary, prompt block, warnings, or report section.
+
+The policy is build-time profile configuration and the analysis is generated on demand. Neither is mutable project state, so legacy migration, local hydration, cycles, locks, Notebook records, v1/v2 backups, and resumable state receive no fabricated Business Integrity record or timestamp and require no backup-version change.
+
 ### 6. Lab Notebook and disposition
 
 Every executed method and Lock It In checkpoint creates a notebook entry containing the required before/after state, route, rationale, evidence, changes, remaining uncertainty, next action, disposition, runtime mode, and model metadata.

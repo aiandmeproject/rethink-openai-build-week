@@ -192,6 +192,53 @@ function renderReasoningIntegrity(reasoningIntegrity) {
   <p class="meta">Capability is claim-specific. Evidence Item count is not independent-chain count. No recorded disconfirmation is not proof that no contradiction exists. This advisory analysis does not automatically validate, contradict, or rewrite a claim.</p>`;
 }
 
+function renderBusinessIntegrity(businessIntegrity) {
+  if (!businessIntegrity) return "";
+  const warnings = Array.isArray(businessIntegrity.highPriorityIntegrityWarnings)
+    ? businessIntegrity.highPriorityIntegrityWarnings
+    : [];
+  const humanRequirements = Array.isArray(businessIntegrity.humanRealWorldInputRequirements)
+    ? businessIntegrity.humanRealWorldInputRequirements
+    : [];
+  const publicLimitations = businessIntegrity.publicEvidenceBoundary?.publicEvidenceLimitations || [];
+  const disconfirmation = Array.isArray(businessIntegrity.disconfirmationCoverage)
+    ? businessIntegrity.disconfirmationCoverage
+    : [];
+  return `<section><h2>Business Integrity</h2>
+  <div class="status-grid">
+    <div><span>Profile / policy</span><strong>${escapeHtml(`${businessIntegrity.profileId || "BUSINESS"} ${businessIntegrity.profileVersion || ""} / policy ${businessIntegrity.policyVersion || "Not recorded"}`)}</strong></div>
+    <div><span>Analysis as of</span><strong>${escapeHtml(businessIntegrity.analysisAsOf || "Not recorded")}</strong></div>
+    <div><span>Derived review state</span><strong>${escapeHtml(readableEnum(businessIntegrity.analysisStatus))}</strong></div>
+    <div><span>Supporting Evidence Items</span><strong>${escapeHtml(businessIntegrity.supportingEvidenceItemCount ?? 0)}</strong></div>
+    <div><span>Known independent supporting chains</span><strong>${escapeHtml(businessIntegrity.knownIndependentSupportingChainCount ?? 0)}</strong></div>
+    <div><span>Unresolved market-scope issues</span><strong>${escapeHtml(businessIntegrity.unresolvedMarketScopeIssues?.length ?? 0)}</strong></div>
+    <div><span>Unresolved customer-segment issues</span><strong>${escapeHtml(businessIntegrity.unresolvedCustomerSegmentIssues?.length ?? 0)}</strong></div>
+    <div><span>Unresolved geography issues</span><strong>${escapeHtml(businessIntegrity.unresolvedGeographyIssues?.length ?? 0)}</strong></div>
+    <div><span>Unresolved time applicability</span><strong>${escapeHtml(businessIntegrity.unresolvedTimeApplicability?.length ?? 0)}</strong></div>
+    <div><span>Endpoint / proxy issues</span><strong>${escapeHtml(businessIntegrity.unresolvedEndpointProxyIssues?.length ?? 0)}</strong></div>
+    <div><span>Unresolved provenance</span><strong>${escapeHtml(businessIntegrity.unresolvedProvenance?.length ?? 0)}</strong></div>
+    <div><span>Synthetic / ineligible support</span><strong>${escapeHtml(businessIntegrity.syntheticOrIneligibleSupport?.length ?? 0)}</strong></div>
+  </div>
+  <h3>Major Business Integrity Warnings</h3>
+  ${renderList(warnings.map((item) => `${item.code}: ${item.interpretation}`), "No major Business Integrity warning is present.")}
+  <h3>Target-Market and Endpoint Boundaries</h3>
+  ${renderList([
+    ...(businessIntegrity.unresolvedMarketScopeIssues || []).map((item) => `${item.claimId}: ${readableEnum(item.dimension)} is ${readableEnum(item.fitStatus)}. ${item.rationale || ""}`),
+    ...(businessIntegrity.unresolvedEndpointProxyIssues || []).map((item) => `${item.claimId}: ${readableEnum(item.dimension)} is ${readableEnum(item.fitStatus)}. ${item.rationale || ""}`)
+  ], "No explicit target-market or proxy-endpoint mismatch is recorded.")}
+  <h3>Temporal Applicability and Disconfirmation</h3>
+  ${renderList([
+    ...(businessIntegrity.currentVersusHistoricalSupport || []).map((item) => `${item.claimId}: ${(item.warningCodes || []).join(", ") || "temporal applicability unresolved"}.`),
+    ...disconfirmation.filter((item) => item.status !== "RECORDED").map((item) => `${item.claimId}: disconfirmation coverage is ${readableEnum(item.status)}.`)
+  ], "No material temporal or disconfirmation coverage gap is recorded.")}
+  <h3>Public Evidence Boundary</h3>
+  ${renderList(publicLimitations.map((item) => `${item.claimId}: public Evidence Items ${item.publicEvidenceIds.join(", ")} do not establish the required private operating outcome.`), "No explicit public-versus-private evidence limitation is recorded.")}
+  <h3>Human / Real-World Input Requirements</h3>
+  ${renderList(humanRequirements.map((item) => `${item.requiredInput || item.question || item.gateType}${item.why ? ` — ${item.why}` : ""}`), "No existing Human / Real-World input requirement is open.")}
+  <p class="meta">This section reuses Core Claim, Provenance, Temporal, and Reasoning Integrity analysis. Its warnings are advisory. It does not calculate a viability score, issue an automatic GO / NO-GO, change a Claim or proposition, alter routing, satisfy a Human Gate, or treat document count as independent evidence count.</p>
+  </section>`;
+}
+
 function collectReferences(report) {
   const references = [];
   const seen = new Set();
@@ -265,6 +312,7 @@ export function renderProjectReportHtml(report) {
 <section><h2>Evidence Lineage / Provenance</h2>${renderProvenance(report?.provenance)}</section>
 <section><h2>Temporal Integrity</h2>${renderTemporalIntegrity(report?.temporalIntegrity)}</section>
 <section><h2>Reasoning Integrity</h2>${renderReasoningIntegrity(report?.reasoningIntegrity)}</section>
+${renderBusinessIntegrity(report?.businessIntegrity)}
 <section><h2>Proposition Status</h2><div class="status-grid">
   <div><span>Proposition</span><strong>${escapeHtml(readableEnum(status.status))}</strong></div>
   <div><span>Validation process</span><strong>${escapeHtml(readableEnum(status.validationProcessStatus))}</strong></div>
