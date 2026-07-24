@@ -1,3 +1,8 @@
+import {
+  BUSINESS_INTEGRITY_POLICY,
+  validateBusinessIntegrityPolicy
+} from "./rethink-business-integrity.js";
+
 export const DOMAIN_PROFILE_AVAILABILITIES = Object.freeze(["ACTIVE", "PLANNED"]);
 export const DEFAULT_DOMAIN_PROFILE_ID = "BUSINESS";
 
@@ -46,6 +51,12 @@ export function validateDomainProfile(profile) {
     throw new TypeError("Domain profile additionalModuleIds must contain uppercase tokens.");
   }
   requiredStringArray(profile.safeguards, "safeguards");
+  if (Object.hasOwn(profile, "businessIntegrityPolicy")) {
+    if (profile.id !== "BUSINESS") {
+      throw new TypeError("Business Integrity policy may be registered only with the BUSINESS Domain Profile.");
+    }
+    validateBusinessIntegrityPolicy(profile.businessIntegrityPolicy);
+  }
   return profile;
 }
 
@@ -139,6 +150,7 @@ export const DOMAIN_PROFILES = Object.freeze([
       decision: "decision",
       evidence: "evidence"
     },
+    businessIntegrityPolicy: BUSINESS_INTEGRITY_POLICY,
     safeguards: [
       "Apply all Rethink Core evidence, uncertainty, and integrity rules.",
       "Preserve final human authority.",
@@ -193,7 +205,14 @@ export function domainProfilePromptContext(state, options = {}) {
     purpose: resolved.purpose,
     terminology: resolved.terminology,
     additionalModuleIds: resolved.additionalModuleIds,
-    safeguards: resolved.safeguards
+    safeguards: resolved.safeguards,
+    ...(resolved.businessIntegrityPolicy ? {
+      businessIntegrityPolicy: {
+        id: resolved.businessIntegrityPolicy.id,
+        version: resolved.businessIntegrityPolicy.version,
+        enabled: resolved.businessIntegrityPolicy.enabled
+      }
+    } : {})
   };
 }
 

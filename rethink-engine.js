@@ -64,6 +64,7 @@ import {
   removeCapabilityAssessment as removeCapabilityAssessmentRecord,
   upsertCapabilityAssessment as upsertCapabilityAssessmentRecord
 } from "./rethink-reasoning-integrity.js";
+import { analyzeBusinessIntegrity } from "./rethink-business-integrity.js";
 
 const SAMPLE_PATTERN = /florida[\s\S]*disabled veterans|disabled veterans[\s\S]*florida/i;
 
@@ -2831,6 +2832,35 @@ export function analyzeProjectReasoningIntegrity(state, {
   });
 }
 
+function analyzeBusinessIntegrityFromState(state, reasoningIntegrityAnalysis, asOf) {
+  const profile = resolveProjectDomainProfile(state);
+  return analyzeBusinessIntegrity({
+    profile,
+    policy: profile.businessIntegrityPolicy,
+    reasoningIntegrityAnalysis,
+    claimLedger: state.claimLedger,
+    evidenceItems: state.evidence,
+    humanGates: state.humanGates,
+    currentDisposition: state.currentDisposition,
+    propositionStatus: latestEvaluation(state)?.propositionStatus || "UNRESOLVED",
+    researchHistory: state.researchHistory,
+    asOf
+  });
+}
+
+export function analyzeProjectBusinessIntegrity(state, {
+  asOf
+}) {
+  state = normalizeProjectState(state);
+  const reasoningIntegrityAnalysis = analyzeReasoningIntegrityProject({
+    ...reasoningIntegrityAnalysisContext(state),
+    asOf,
+    purpose: "CURRENT_STATE",
+    researchHistory: state.researchHistory
+  });
+  return analyzeBusinessIntegrityFromState(state, reasoningIntegrityAnalysis, asOf);
+}
+
 function createProvenanceReport(state) {
   const linkableEvidenceIds = linkableClaimEvidenceIds(state);
   const eligibleEvidenceIds = actualEvidence(state).map((item) => item.id);
@@ -2987,6 +3017,16 @@ function createReasoningIntegrityReport(state, asOf) {
   };
 }
 
+function createBusinessIntegrityReport(state, asOf, reasoningIntegrityReport) {
+  const profile = resolveProjectDomainProfile(state);
+  if (!profile.businessIntegrityPolicy) return null;
+  return analyzeBusinessIntegrityFromState(
+    state,
+    reasoningIntegrityReport.analysis,
+    asOf
+  );
+}
+
 /**
  * Produces a conservative, structured business report from the persisted project
  * record. The report never upgrades an assumption into a finding merely because
@@ -3057,6 +3097,11 @@ export function createProjectReport(state, { now = new Date() } = {}) {
   const provenanceReport = createProvenanceReport(state);
   const temporalReport = createTemporalReport(state, reportGeneratedAt);
   const reasoningIntegrityReport = createReasoningIntegrityReport(state, reportGeneratedAt);
+  const businessIntegrityReport = createBusinessIntegrityReport(
+    state,
+    reportGeneratedAt,
+    reasoningIntegrityReport
+  );
   const propositionStatus = evidence.length === 0
     ? "INSUFFICIENT_EVIDENCE"
     : (evaluation?.propositionStatus || "UNRESOLVED");
@@ -3080,6 +3125,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
     provenance: provenanceReport,
     temporalIntegrity: temporalReport,
     reasoningIntegrity: reasoningIntegrityReport,
+    ...(businessIntegrityReport ? { businessIntegrity: businessIntegrityReport } : {}),
     currentDisposition: {
       systemRecommendation: lastCycle?.disposition || state.currentDisposition,
       humanDisposition: latestHumanDecision?.humanDisposition || "",
@@ -3160,6 +3206,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
       ...(poorApplicability.length ? ["Some evidence has unknown, broad, or poorly matched population applicability."] : []),
       ...(syntheticOrSimulated.length ? ["Synthetic or simulated test results remain traceable but are excluded from real-world proposition validation."] : []),
       ...reasoningIntegrityReport.analysis.warningCodes,
+      ...(businessIntegrityReport?.warningCodes || []),
       ...(provenanceReport.summary.unresolvedEvidenceCount
         ? [`${provenanceReport.summary.unresolvedEvidenceCount} active evidence item${provenanceReport.summary.unresolvedEvidenceCount === 1 ? " has" : "s have"} unresolved or partial provenance and is not treated as a known independent source chain.`]
         : []),

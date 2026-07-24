@@ -3,6 +3,11 @@ import { domainProfilePromptContext } from "./rethink-domain-profiles.js";
 import { analyzeIndependentEvidenceChains } from "./rethink-provenance.js";
 import { analyzeTemporalIntegrity } from "./rethink-temporal.js";
 import { analyzeProjectReasoningIntegrity } from "./rethink-reasoning-integrity.js";
+import {
+  BUSINESS_INTEGRITY_POLICY,
+  analyzeBusinessIntegrity,
+  createBusinessIntegrityPromptContext
+} from "./rethink-business-integrity.js";
 
 const DOCTRINE = `Rethink is a routed reasoning architecture for managing uncertainty over the life of a problem.
 Its primary doctrine is: answer the unanswered question whose answer changes the greatest number of downstream decisions.
@@ -157,6 +162,7 @@ function relevantTemporalLedger(state, targetRefs) {
 function compactState(state, { asOf = state.updatedAt } = {}) {
   const trustedNotebook = state.notebook.filter((entry) => entry.projectId === state.id && entry.contextStatus !== "LEGACY_UNVERIFIED");
   const lastCycleAt = [...trustedNotebook].reverse().find((entry) => entry.entryType === "CYCLE")?.timestamp || state.createdAt;
+  const activeDomainProfile = domainProfilePromptContext(state);
   const evidenceRegister = state.evidence.filter((item) => item.status === "ACTIVE" && item.evidenceAuthenticity !== "SYNTHETIC_SIMULATED");
   const syntheticTestData = state.evidence.filter((item) => item.status === "ACTIVE" && item.evidenceAuthenticity === "SYNTHETIC_SIMULATED");
   const promptClaims = (state.claimLedger?.claims || []).slice(-30);
@@ -227,6 +233,25 @@ function compactState(state, { asOf = state.updatedAt } = {}) {
     purpose: "CURRENT_STATE",
     researchHistory: state.researchHistory || []
   });
+  const businessIntegrityAnalysis = activeDomainProfile.id === "BUSINESS"
+    ? analyzeBusinessIntegrity({
+        profile: activeDomainProfile,
+        policy: BUSINESS_INTEGRITY_POLICY,
+        reasoningIntegrityAnalysis,
+        claimLedger: promptClaimLedger,
+        evidenceItems: state.evidence,
+        humanGates: state.humanGates || [],
+        currentDisposition: state.currentDisposition,
+        propositionStatus: trustedNotebook.at(-1)?.evidenceEvaluation?.propositionStatus || "UNRESOLVED",
+        researchHistory: state.researchHistory || [],
+        asOf
+      })
+    : null;
+  const businessIntegrityPromptContext = createBusinessIntegrityPromptContext({
+    profile: activeDomainProfile,
+    policy: BUSINESS_INTEGRITY_POLICY,
+    analysis: businessIntegrityAnalysis
+  });
   const relevantTemporalAssessmentIds = new Set(temporalLedger.assessments.map((item) => item.id));
   const relevantTemporalRelationshipIds = new Set(temporalLedger.relationships.map((item) => item.id));
   const relevantCapabilityAssessmentIds = new Set(
@@ -246,7 +271,7 @@ function compactState(state, { asOf = state.updatedAt } = {}) {
   return {
     id: state.id,
     projectContextBoundary: `Use only records carrying projectId ${state.id} or contained directly in this state object.`,
-    domainProfile: domainProfilePromptContext(state),
+    domainProfile: activeDomainProfile,
     originalInput: state.originalInput,
     problemDefinition: state.problemDefinition,
     pecPhase: state.pecPhase,
@@ -269,6 +294,9 @@ function compactState(state, { asOf = state.updatedAt } = {}) {
       derivedAnalysis: reasoningIntegrityAnalysis,
       interpretationWarning: "Capability is claim-specific and advisory. No recorded disconfirmation does not mean no disconfirmation exists. Technical failure and incomplete search are not substantive negative findings. Warnings do not automatically change claim status or relationship meaning."
     },
+    ...(businessIntegrityPromptContext
+      ? { businessIntegrity: businessIntegrityPromptContext }
+      : {}),
     evidenceRegister: evidenceRegister.slice(-40),
     syntheticTestDataForTraceOnly: syntheticTestData.slice(-20),
     routedNonEvidenceIntake: state.evidence.filter((item) => item.status === "ROUTED").slice(-20),
