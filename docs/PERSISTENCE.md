@@ -2,7 +2,7 @@
 
 ## Current guarantee
 
-The browser repository adapter stores one active project session under `rethink.workspace.v0.1` in same-origin `localStorage`. It preserves project state, route/result view state, assumptions, evidence, the Claim Ledger, the Provenance Ledger, links, locks, gates, human decisions, stage overrides, state events, tangents, and Lab Notebook entries across reloads and application restarts on that browser profile.
+The browser repository adapter stores one active project session under `rethink.workspace.v0.1` in same-origin `localStorage`. It preserves project state, route/result view state, assumptions, evidence, the Claim Ledger, the Provenance Ledger, the Temporal Ledger, links, locks, gates, human decisions, stage overrides, state events, tangents, and Lab Notebook entries across reloads and application restarts on that browser profile.
 
 This is device-local durability, not an account-backed guarantee. It does not promise survival after browser storage deletion, private-session cleanup, device loss, or a move to another deployment origin.
 
@@ -12,9 +12,11 @@ This is device-local durability, not an account-backed guarantee. It does not pr
 
 **Download Final Report** creates a standalone UTF-8 HTML business report. **Download Report JSON** exports the structured report data, and **Notebook JSON** exports the focused reasoning history. None of these three report/history artifacts is a full project backup.
 
-**Notebook JSON** exports a versioned `rethink.lab-notebook` record containing the notebook, state events, assumptions, evidence, Claim Ledger, Provenance Ledger, locks, current PEC phase, and current disposition. It is for audit and analysis; it is not the full restore format.
+**Notebook JSON** exports a versioned `rethink.lab-notebook` record containing the notebook, state events, assumptions, evidence, Claim Ledger, Provenance Ledger, Temporal Ledger, locks, current PEC phase, and current disposition. It is for audit and analysis; it is not the full restore format.
 
-Legacy raw project JSON can still be imported after state validation. Missing Claim or Provenance Ledger fields normalize to empty versioned ledgers without fabricated records or timestamps. New exports always use the versioned envelope.
+Legacy raw project JSON can still be imported after state validation. Missing Claim, Provenance, or Temporal Ledger fields normalize to empty versioned ledgers without fabricated records or timestamps. Existing evidence dates and source metadata remain unchanged and never become fabricated Temporal Assessments. New exports always use the versioned envelope.
+
+Temporal Assessments and `CORRECTS`/`SUPERSEDES` relationships persist as canonical project state through v1 exports, v1/v2 imports, cross-origin restoration, and resumable v2 runtime sessions. Lock snapshots and Notebook exports include the Temporal Ledger; structured and human reports include read-only analysis evaluated at their explicit generation timestamp. Backup format versions and the browser repository contract remain unchanged. Import validates typed temporal endpoints, assessment/relationship consistency, intervals, and active replacement cycles before accepting state.
 
 ## Isolation
 

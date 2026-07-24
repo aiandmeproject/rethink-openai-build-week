@@ -45,6 +45,17 @@ import {
   upsertProvenanceArtifact as upsertProvenanceArtifactRecord,
   upsertProvenanceRelationship as upsertProvenanceRelationshipRecord
 } from "./rethink-provenance.js";
+import {
+  analyzeClaimTemporalIntegrity,
+  analyzeSourceChainTemporalIntegrity,
+  analyzeTemporalIntegrity,
+  createEmptyTemporalLedger,
+  normalizeTemporalLedger,
+  removeTemporalAssessment as removeTemporalAssessmentRecord,
+  removeTemporalRelationship as removeTemporalRelationshipRecord,
+  upsertTemporalAssessment as upsertTemporalAssessmentRecord,
+  upsertTemporalRelationship as upsertTemporalRelationshipRecord
+} from "./rethink-temporal.js";
 
 const SAMPLE_PATTERN = /florida[\s\S]*disabled veterans|disabled veterans[\s\S]*florida/i;
 
@@ -196,6 +207,7 @@ export function initializeProject(input, {
     evidence: [],
     claimLedger: createEmptyClaimLedger(),
     provenanceLedger: createEmptyProvenanceLedger(),
+    temporalLedger: createEmptyTemporalLedger(),
     lockedDecisions: [],
     tangents: [],
     notebook: [],
@@ -317,11 +329,19 @@ export function projectProgressSignature(state) {
     .filter((item) => item.status === "ACTIVE")
     .map((item) => `${item.id}:${item.subjectType}:${item.subjectId}:${item.objectType}:${item.objectId}:${item.relationship}:${item.updatedAt}`)
     .sort();
+  const temporalAssessments = (state.temporalLedger?.assessments || [])
+    .filter((item) => item.status === "ACTIVE")
+    .map((item) => `${item.id}:${item.targetType}:${item.targetId}:${item.temporalStatus}:${item.statusAsOf}:${item.updatedAt}`)
+    .sort();
+  const temporalRelationships = (state.temporalLedger?.relationships || [])
+    .filter((item) => item.status === "ACTIVE")
+    .map((item) => `${item.id}:${item.subjectType}:${item.subjectId}:${item.objectType}:${item.objectId}:${item.relationship}:${item.effectiveAt}:${item.updatedAt}`)
+    .sort();
   const locks = (state.lockedDecisions || []).map((item) => `${item.id}:${item.status || "ACTIVE"}`).sort();
   const gates = (state.humanGates || []).map((item) => `${item.id}:${item.status}`).sort();
   const decisions = (state.humanDecisions || []).map((item) => `${item.id}:${item.humanDisposition}`).sort();
   const stages = (state.stageOverrides || []).map((item) => `${item.id}:${item.action}:${item.targetPecPhase}:${item.forcedMethod || ""}`).sort();
-  return JSON.stringify({ assumptions, evidence, claims, claimEvidenceRelationships, provenanceArtifacts, provenanceRelationships, locks, gates, decisions, stages, phase: state.pecPhase?.id, lifecycleStatus: state.lifecycleStatus, currentDisposition: state.currentDisposition });
+  return JSON.stringify({ assumptions, evidence, claims, claimEvidenceRelationships, provenanceArtifacts, provenanceRelationships, temporalAssessments, temporalRelationships, locks, gates, decisions, stages, phase: state.pecPhase?.id, lifecycleStatus: state.lifecycleStatus, currentDisposition: state.currentDisposition });
 }
 
 function trustedCycleEntries(state) {
@@ -957,6 +977,10 @@ export function normalizeProjectState(state) {
   normalized.provenanceLedger = normalizeProvenanceLedger(normalized.provenanceLedger, {
     evidenceIds: normalized.evidence.map((item) => item.id)
   });
+  normalized.temporalLedger = normalizeTemporalLedger(normalized.temporalLedger, {
+    evidenceIds: normalized.evidence.map((item) => item.id),
+    artifactIds: normalized.provenanceLedger.artifacts.map((item) => item.id)
+  });
   const existingQuestions = Array.isArray(normalized.questions) ? normalized.questions : [];
   const questionTexts = [
     ...existingQuestions.map((item) => item.text),
@@ -1029,6 +1053,7 @@ export function createNotebookExport(state, { now = new Date() } = {}) {
     assumptions: cloneValue(normalized.assumptions),
     claimLedger: cloneValue(normalized.claimLedger),
     provenanceLedger: cloneValue(normalized.provenanceLedger),
+    temporalLedger: cloneValue(normalized.temporalLedger),
     lockedVersions: cloneValue(normalized.lockedDecisions)
   };
 }
@@ -1368,6 +1393,7 @@ export function lockProjectState(state, { note = "", now = new Date() } = {}) {
     evidence: state.evidence.map((evidence) => cloneValue(evidence)),
     claimLedger: cloneValue(state.claimLedger),
     provenanceLedger: cloneValue(state.provenanceLedger),
+    temporalLedger: cloneValue(state.temporalLedger),
     highestLeverageQuestion: latestTrustedCycle?.highestLeverageQuestion || "",
     reopeningTrigger: "",
     reopeningReason: "",
@@ -2409,6 +2435,142 @@ function removeProjectProvenanceRelationship(state, operation, at) {
   };
 }
 
+function temporalEndpointOptions(state) {
+  return {
+    evidenceIds: state.evidence.map((item) => item.id),
+    artifactIds: state.provenanceLedger.artifacts.map((item) => item.id)
+  };
+}
+
+function upsertProjectTemporalAssessment(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = upsertTemporalAssessmentRecord(state.temporalLedger, operation.item || {}, {
+    now: at,
+    ...temporalEndpointOptions(state)
+  });
+  if (result.unchanged) {
+    return {
+      state,
+      event: null,
+      notebookEntry: null,
+      assessment: result.assessment,
+      unchanged: true
+    };
+  }
+  const event = {
+    id: makeId("event", at),
+    entityType: "TEMPORAL_ASSESSMENT",
+    entityId: result.assessment.id,
+    action: result.action,
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `${result.action === "CREATED" ? "Added" : "Updated"} ${result.assessment.temporalStatus.toLowerCase()} temporal assessment for ${result.assessment.targetType.toLowerCase()} ${result.assessment.targetId}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.assessment)
+  };
+  return {
+    ...finishStateEdit({ ...state, temporalLedger: result.ledger }, event, at),
+    assessment: result.assessment,
+    unchanged: false
+  };
+}
+
+function removeProjectTemporalAssessment(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = removeTemporalAssessmentRecord(state.temporalLedger, operation.id, {
+    reason,
+    now: at,
+    ...temporalEndpointOptions(state)
+  });
+  const event = {
+    id: makeId("event", at),
+    entityType: "TEMPORAL_ASSESSMENT",
+    entityId: result.assessment.id,
+    action: "REMOVED",
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `Retired the temporal assessment for ${result.assessment.targetType.toLowerCase()} ${result.assessment.targetId}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.assessment)
+  };
+  return {
+    ...finishStateEdit({ ...state, temporalLedger: result.ledger }, event, at),
+    assessment: result.assessment
+  };
+}
+
+function upsertProjectTemporalRelationship(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = upsertTemporalRelationshipRecord(state.temporalLedger, operation.item || {}, {
+    now: at,
+    ...temporalEndpointOptions(state)
+  });
+  if (result.unchanged) {
+    return {
+      state,
+      event: null,
+      notebookEntry: null,
+      relationship: result.relationship,
+      unchanged: true
+    };
+  }
+  const event = {
+    id: makeId("event", at),
+    entityType: "TEMPORAL_RELATIONSHIP",
+    entityId: result.relationship.id,
+    action: result.action === "CREATED" ? "LINKED" : "UPDATED",
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `${result.action === "CREATED" ? "Linked" : "Updated"} ${result.relationship.subjectType.toLowerCase()} ${result.relationship.subjectId} ${result.relationship.relationship.toLowerCase()} ${result.relationship.objectType.toLowerCase()} ${result.relationship.objectId}${result.affectedAssessment ? " with an explicit matching affected-target assessment update" : ""}.`,
+    reason,
+    before: result.affectedAssessment
+      ? {
+          relationship: result.before,
+          affectedAssessment: result.affectedAssessmentBefore
+        }
+      : result.before,
+    after: result.affectedAssessment
+      ? {
+          relationship: cloneValue(result.relationship),
+          affectedAssessment: cloneValue(result.affectedAssessment)
+        }
+      : cloneValue(result.relationship)
+  };
+  return {
+    ...finishStateEdit({ ...state, temporalLedger: result.ledger }, event, at),
+    relationship: result.relationship,
+    affectedAssessment: result.affectedAssessment,
+    unchanged: false
+  };
+}
+
+function removeProjectTemporalRelationship(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = removeTemporalRelationshipRecord(state.temporalLedger, operation.id, {
+    reason,
+    now: at,
+    ...temporalEndpointOptions(state)
+  });
+  const event = {
+    id: makeId("event", at),
+    entityType: "TEMPORAL_RELATIONSHIP",
+    entityId: result.relationship.id,
+    action: "UNLINKED",
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `Retired the ${result.relationship.relationship.toLowerCase()} temporal relationship ${result.relationship.id}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.relationship)
+  };
+  return {
+    ...finishStateEdit({ ...state, temporalLedger: result.ledger }, event, at),
+    relationship: result.relationship
+  };
+}
+
 export function manageProjectState(state, operation, { now = new Date() } = {}) {
   state = normalizeProjectState(state);
   if (!operation || typeof operation !== "object") {
@@ -2425,6 +2587,10 @@ export function manageProjectState(state, operation, { now = new Date() } = {}) 
     case "UPSERT_PROVENANCE_ARTIFACT": return upsertProjectProvenanceArtifact(state, operation, now);
     case "UPSERT_PROVENANCE_RELATIONSHIP": return upsertProjectProvenanceRelationship(state, operation, now);
     case "REMOVE_PROVENANCE_RELATIONSHIP": return removeProjectProvenanceRelationship(state, operation, now);
+    case "UPSERT_TEMPORAL_ASSESSMENT": return upsertProjectTemporalAssessment(state, operation, now);
+    case "REMOVE_TEMPORAL_ASSESSMENT": return removeProjectTemporalAssessment(state, operation, now);
+    case "UPSERT_TEMPORAL_RELATIONSHIP": return upsertProjectTemporalRelationship(state, operation, now);
+    case "REMOVE_TEMPORAL_RELATIONSHIP": return removeProjectTemporalRelationship(state, operation, now);
     case "REOPEN_LOCK": return reopenLock(state, operation, now);
     case "RESOLVE_HUMAN_GATE": return resolveHumanGate(state, operation, now);
     case "OVERRIDE_DISPOSITION": return overrideDisposition(state, operation, now);
@@ -2479,6 +2645,61 @@ function reportEvidenceItem(item, { synthetic = false } = {}) {
   };
 }
 
+function temporalAnalysisContext(state) {
+  return {
+    temporalLedger: state.temporalLedger,
+    provenanceLedger: state.provenanceLedger,
+    claimLedger: state.claimLedger,
+    evidenceItems: state.evidence,
+    linkableEvidenceIds: linkableClaimEvidenceIds(state),
+    eligibleEvidenceIds: actualEvidence(state).map((item) => item.id)
+  };
+}
+
+export function analyzeProjectTemporalTarget(state, {
+  targetType,
+  targetId,
+  asOf,
+  purpose = "CURRENT_STATE"
+}) {
+  state = normalizeProjectState(state);
+  return analyzeTemporalIntegrity(state.temporalLedger, {
+    evidenceItems: state.evidence,
+    provenanceLedger: state.provenanceLedger,
+    targetRefs: [{ targetType, targetId }],
+    asOf,
+    purpose
+  });
+}
+
+export function analyzeProjectSourceChainTemporalIntegrity(state, {
+  evidenceId,
+  asOf,
+  purpose = "CURRENT_STATE"
+}) {
+  state = normalizeProjectState(state);
+  return analyzeSourceChainTemporalIntegrity({
+    ...temporalAnalysisContext(state),
+    evidenceId,
+    asOf,
+    purpose
+  });
+}
+
+export function analyzeProjectClaimTemporalIntegrity(state, {
+  claimId,
+  asOf,
+  purpose = "CURRENT_STATE"
+}) {
+  state = normalizeProjectState(state);
+  return analyzeClaimTemporalIntegrity({
+    ...temporalAnalysisContext(state),
+    claimId,
+    asOf,
+    purpose
+  });
+}
+
 function createProvenanceReport(state) {
   const linkableEvidenceIds = linkableClaimEvidenceIds(state);
   const eligibleEvidenceIds = actualEvidence(state).map((item) => item.id);
@@ -2520,6 +2741,89 @@ function createProvenanceReport(state) {
   };
 }
 
+function createTemporalReport(state, asOf) {
+  const context = temporalAnalysisContext(state);
+  const activeEvidenceIds = state.evidence
+    .filter((item) => item.status === "ACTIVE")
+    .map((item) => item.id);
+  const targetRefs = [
+    ...activeEvidenceIds.map((targetId) => ({ targetType: "EVIDENCE_ITEM", targetId })),
+    ...state.provenanceLedger.artifacts.map((item) => ({
+      targetType: "PROVENANCE_ARTIFACT",
+      targetId: item.id
+    }))
+  ];
+  const analysis = analyzeTemporalIntegrity(state.temporalLedger, {
+    evidenceItems: state.evidence,
+    provenanceLedger: state.provenanceLedger,
+    targetRefs,
+    asOf,
+    purpose: "CURRENT_STATE"
+  });
+  const sourceChainAnalyses = activeEvidenceIds.map((evidenceId) =>
+    analyzeSourceChainTemporalIntegrity({
+      ...context,
+      evidenceId,
+      asOf,
+      purpose: "CURRENT_STATE"
+    })
+  );
+  const claimAnalyses = state.claimLedger.claims.map((claim) =>
+    analyzeClaimTemporalIntegrity({
+      ...context,
+      claimId: claim.id,
+      asOf,
+      purpose: "CURRENT_STATE"
+    })
+  );
+  const activeAssessmentByEvidenceId = new Map(state.temporalLedger.assessments
+    .filter((item) => item.status === "ACTIVE" && item.targetType === "EVIDENCE_ITEM")
+    .map((item) => [item.targetId, item]));
+  const syntheticEvidenceIds = state.evidence
+    .filter(isSyntheticOrSimulatedForReport)
+    .map((item) => item.id);
+  const warningCodes = new Set([
+    ...analysis.intervalConflicts.map((item) => item.code),
+    ...analysis.relationshipAssessmentConflicts.map((item) => item.code),
+    ...analysis.unresolvedCorrectingSourceWarnings.map((item) => item.code),
+    ...analysis.unresolvedSupersedingSourceWarnings.map((item) => item.code),
+    ...analysis.temporalCycleWarnings.map((item) => item.code),
+    ...sourceChainAnalyses.flatMap((item) => item.warnings),
+    ...claimAnalyses.flatMap((item) => item.warnings)
+  ]);
+  return {
+    version: state.temporalLedger.version,
+    interpretationPolicy: "EXPLICIT_ASSESSMENTS_ONLY_WARNING_WITHOUT_AUTOMATIC_EVIDENCE_OR_CLAIM_MUTATION",
+    relationshipDirection: "SUBJECT_NEWER_OR_CORRECTING_TO_OBJECT_OLDER_OR_AFFECTED",
+    analysisAsOf: asOf,
+    assessments: state.temporalLedger.assessments.map((item) => cloneValue(item)),
+    relationships: state.temporalLedger.relationships.map((item) => cloneValue(item)),
+    analysis,
+    sourceChainAnalyses,
+    claimAnalyses,
+    summary: {
+      assessmentCount: state.temporalLedger.assessments.length,
+      activeAssessmentCount: state.temporalLedger.assessments.filter((item) => item.status === "ACTIVE").length,
+      assessedActiveEvidenceCount: activeEvidenceIds.filter((id) => activeAssessmentByEvidenceId.has(id)).length,
+      unassessedActiveEvidenceCount: activeEvidenceIds.filter((id) => !activeAssessmentByEvidenceId.has(id)).length,
+      currentCount: analysis.statusGroups.CURRENT.length,
+      historicalCount: analysis.statusGroups.HISTORICAL.length,
+      outdatedCount: analysis.statusGroups.OUTDATED.length,
+      correctedCount: analysis.statusGroups.CORRECTED.length,
+      supersededCount: analysis.statusGroups.SUPERSEDED.length,
+      unknownCount: analysis.statusGroups.UNKNOWN.length,
+      correctionRelationshipCount: state.temporalLedger.relationships.filter((item) =>
+        item.status === "ACTIVE" && item.relationship === "CORRECTS"
+      ).length,
+      supersessionRelationshipCount: state.temporalLedger.relationships.filter((item) =>
+        item.status === "ACTIVE" && item.relationship === "SUPERSEDES"
+      ).length,
+      warningCount: warningCodes.size,
+      syntheticOrOtherwiseIneligibleEvidenceCount: syntheticEvidenceIds.length
+    }
+  };
+}
+
 /**
  * Produces a conservative, structured business report from the persisted project
  * record. The report never upgrades an assumption into a finding merely because
@@ -2527,6 +2831,7 @@ function createProvenanceReport(state) {
  */
 export function createProjectReport(state, { now = new Date() } = {}) {
   state = normalizeProjectState(state);
+  const reportGeneratedAt = timestamp(now);
   const cycles = trustedCycleEntries(state);
   const lastCycle = cycles.at(-1);
   const evaluation = latestEvaluation(state);
@@ -2587,6 +2892,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
     })
   };
   const provenanceReport = createProvenanceReport(state);
+  const temporalReport = createTemporalReport(state, reportGeneratedAt);
   const propositionStatus = evidence.length === 0
     ? "INSUFFICIENT_EVIDENCE"
     : (evaluation?.propositionStatus || "UNRESOLVED");
@@ -2597,7 +2903,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
 
   return {
     reportVersion: "1.0",
-    generatedAt: timestamp(now),
+    generatedAt: reportGeneratedAt,
     projectId: state.id,
     domainProfile: state.domainProfile,
     domainProfileVersion: state.domainProfileVersion,
@@ -2608,6 +2914,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
     problemDefinition: state.problemDefinition,
     claimLedger: claimLedgerReport,
     provenance: provenanceReport,
+    temporalIntegrity: temporalReport,
     currentDisposition: {
       systemRecommendation: lastCycle?.disposition || state.currentDisposition,
       humanDisposition: latestHumanDecision?.humanDisposition || "",

@@ -329,6 +329,111 @@ test("HTTP state management creates canonical provenance artifacts and relations
   });
 });
 
+test("HTTP state management creates canonical temporal assessments and relationships through the existing Core boundary", async () => {
+  await withServer(async (baseUrl) => {
+    let { state } = await fetch(`${baseUrl}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "Two time-bounded records require an explicit correction trail." })
+    }).then((response) => response.json());
+
+    const manage = async (operation) => {
+      const response = await fetch(`${baseUrl}/api/rethink/state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state, operation })
+      });
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      state = payload.state;
+      return payload;
+    };
+
+    await manage({
+      type: "UPSERT_EVIDENCE",
+      reason: "Recorded the earlier time-bounded observation.",
+      item: {
+        claim: "The earlier record contains a value that was later corrected.",
+        intakeType: "TEST_RESULT",
+        provenanceOrigin: "USER_INPUT",
+        assessment: "Retained as the affected historical Evidence Item.",
+        reliability: "MODERATE",
+        relationship: "NONE_UNLINKED",
+        assumptionIds: [],
+        questionRefs: []
+      }
+    });
+    const earlierId = state.evidence[0].id;
+    await manage({
+      type: "UPSERT_EVIDENCE",
+      reason: "Recorded the later correcting observation.",
+      item: {
+        claim: "The later record explicitly corrects the earlier value.",
+        intakeType: "TEST_RESULT",
+        provenanceOrigin: "USER_INPUT",
+        assessment: "Retained as a separate correcting Evidence Item.",
+        reliability: "MODERATE",
+        relationship: "NONE_UNLINKED",
+        assumptionIds: [],
+        questionRefs: []
+      }
+    });
+    const laterId = state.evidence[1].id;
+    await manage({
+      type: "UPSERT_TEMPORAL_ASSESSMENT",
+      reason: "Recorded the explicit corrected status before linking the correction.",
+      item: {
+        targetType: "EVIDENCE_ITEM",
+        targetId: earlierId,
+        temporalStatus: "CORRECTED",
+        statusAsOf: "2026-07-24T12:00:00Z",
+        rationale: "The later Evidence Item explicitly corrects this earlier record."
+      }
+    });
+    const linked = await manage({
+      type: "UPSERT_TEMPORAL_RELATIONSHIP",
+      reason: "Linked the correcting target to the affected target.",
+      item: {
+        subjectType: "EVIDENCE_ITEM",
+        subjectId: laterId,
+        objectType: "EVIDENCE_ITEM",
+        objectId: earlierId,
+        relationship: "CORRECTS",
+        effectiveAt: "2026-07-24T12:00:00Z"
+      }
+    });
+    assert.equal(state.temporalLedger.assessments.length, 1);
+    assert.equal(state.temporalLedger.relationships.length, 1);
+    assert.equal(state.temporalLedger.relationships[0].relationship, "CORRECTS");
+    assert.equal(linked.relationship.id, state.temporalLedger.relationships[0].id);
+    assert.equal(state.stateEvents.at(-1).entityType, "TEMPORAL_RELATIONSHIP");
+    assert.equal(state.notebook.at(-1).entryType, "STATE_EDIT");
+
+    const relationshipId = state.temporalLedger.relationships[0].id;
+    const assessmentId = state.temporalLedger.assessments[0].id;
+    const updated = await manage({
+      type: "UPSERT_TEMPORAL_RELATIONSHIP",
+      reason: "Explicitly changed both the relationship meaning and affected assessment.",
+      item: {
+        id: relationshipId,
+        relationship: "SUPERSEDES",
+        effectiveAt: "2026-07-24T12:00:00Z",
+        affectedAssessment: {
+          id: assessmentId,
+          temporalStatus: "SUPERSEDED",
+          statusAsOf: "2026-07-24T12:00:00Z",
+          rationale: "The later record is now explicitly recorded as replacing the earlier record."
+        }
+      }
+    });
+    assert.equal(updated.relationship.id, relationshipId);
+    assert.equal(updated.relationship.relationship, "SUPERSEDES");
+    assert.equal(updated.affectedAssessment.id, assessmentId);
+    assert.equal(state.temporalLedger.assessments[0].temporalStatus, "SUPERSEDED");
+    assert.equal(state.stateEvents.at(-1).after.affectedAssessment.temporalStatus, "SUPERSEDED");
+  });
+});
+
 test("static application is served", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(baseUrl);

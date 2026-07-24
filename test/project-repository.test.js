@@ -24,7 +24,8 @@ test("device-local repository persists and clears an isolated project session", 
     domainProfile: "BUSINESS",
     domainProfileVersion: "1.0.0",
     claimLedger: { version: 1, claims: [], evidenceRelationships: [] },
-    provenanceLedger: { version: 1, artifacts: [], relationships: [] }
+    provenanceLedger: { version: 1, artifacts: [], relationships: [] },
+    temporalLedger: { version: 1, assessments: [], relationships: [] }
   });
   repository.clearSession();
   assert.equal(repository.loadSession(), null);
@@ -40,6 +41,7 @@ test("device-local repository migrates the legacy single-project key", () => {
   assert.equal(repository.loadSession().state.domainProfileVersion, "1.0.0");
   assert.deepEqual(repository.loadSession().state.claimLedger, { version: 1, claims: [], evidenceRelationships: [] });
   assert.deepEqual(repository.loadSession().state.provenanceLedger, { version: 1, artifacts: [], relationships: [] });
+  assert.deepEqual(repository.loadSession().state.temporalLedger, { version: 1, assessments: [], relationships: [] });
   assert.equal(storage.has("rethink.project.v0.1"), false);
   assert.equal(storage.has("rethink.workspace.v0.1"), true);
 });
@@ -68,6 +70,22 @@ test("version 2 backup restores a complete project across independent browser or
         assessment: "Used to verify v2 portability.",
         assumptionIds: [],
         questionRefs: []
+      }
+    }
+  }).state;
+  state = runtime.manageState({
+    state,
+    operation: {
+      type: "UPSERT_TEMPORAL_ASSESSMENT",
+      reason: "Portable temporal assessment coverage.",
+      item: {
+        targetType: "EVIDENCE_ITEM",
+        targetId: state.evidence[0].id,
+        temporalStatus: "CURRENT",
+        statusAsOf: "2026-07-20T12:00:00.000Z",
+        effectiveFrom: "2026-01-01",
+        effectiveTo: "2026-12-31",
+        rationale: "Explicitly current for the portable-state verification interval."
       }
     }
   }).state;
@@ -160,6 +178,9 @@ test("version 2 backup restores a complete project across independent browser or
   assert.deepEqual(restored.state.provenanceLedger, completed.state.provenanceLedger);
   assert.equal(restored.state.provenanceLedger.artifacts.length, 1);
   assert.equal(restored.state.provenanceLedger.relationships.length, 1);
+  assert.deepEqual(restored.state.temporalLedger, completed.state.temporalLedger);
+  assert.equal(restored.state.temporalLedger.assessments.length, 1);
+  assert.equal(restored.state.temporalLedger.relationships.length, 0);
   assert.deepEqual(restored.state.questions, completed.state.questions);
   assert.equal(restored.state.notebook.length, completed.state.notebook.length);
   assert.equal(restored.state.domainProfile, "BUSINESS");
