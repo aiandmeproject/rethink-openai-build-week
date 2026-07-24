@@ -1,6 +1,7 @@
 import { MODULE_IDS, modulePromptCatalog } from "./rethink-modules.js";
 import { domainProfilePromptContext } from "./rethink-domain-profiles.js";
 import { analyzeIndependentEvidenceChains } from "./rethink-provenance.js";
+import { analyzeTemporalIntegrity } from "./rethink-temporal.js";
 
 const DOCTRINE = `Rethink is a routed reasoning architecture for managing uncertainty over the life of a problem.
 Its primary doctrine is: answer the unanswered question whose answer changes the greatest number of downstream decisions.
@@ -10,7 +11,9 @@ PROJECT-CONTEXT ISOLATION IS NON-NEGOTIABLE. Use only the active project's origi
 
 CLAIM SEMANTICS ARE EXPLICIT. A claim is an assertion to evaluate; an assumption is a hypothesis the project currently relies on; evidence is an observation or finding that may bear on one or more claims. Keep these records distinct. Claim status and each SUPPORTS, CONTRADICTS, or LIMITS relationship are persisted human-auditable state. Never infer or change claim status merely by counting relationships, never treat relationship count as independent evidence-chain count, and never confuse a Claim Ledger status with the separate cycle-level proposition status.
 
-PROVENANCE SEMANTICS ARE EXPLICIT. Evidence Lineage uses typed, directed relationships from a subject/child to an object/parent or referenced origin. DERIVED_FROM, SUMMARIZES, SYNDICATES, and REANALYZES are material dependencies that collapse to explicitly FOUNDATIONAL roots. CITES and REPLICATES do not by themselves prove derivation or independence. Unknown, missing, partial, or citation-only lineage remains unresolved; never infer independence from titles, URLs, publishers, authors, wording, or record counts. Synthetic or simulated lineage may remain traceable but is excluded from eligible real-world independent-chain counts.`;
+PROVENANCE SEMANTICS ARE EXPLICIT. Evidence Lineage uses typed, directed relationships from a subject/child to an object/parent or referenced origin. DERIVED_FROM, SUMMARIZES, SYNDICATES, and REANALYZES are material dependencies that collapse to explicitly FOUNDATIONAL roots. CITES and REPLICATES do not by themselves prove derivation or independence. Unknown, missing, partial, or citation-only lineage remains unresolved; never infer independence from titles, URLs, publishers, authors, wording, or record counts. Synthetic or simulated lineage may remain traceable but is excluded from eligible real-world independent-chain counts.
+
+TEMPORAL SEMANTICS ARE EXPLICIT AND AS-OF BOUNDED. Use only stored Temporal Assessments and relationships; never infer CURRENT from a source date, retrieval date, newer wording, or missing state. A source may be historically valid but not current. Unknown temporal status is not evidence of current validity. A corrected or superseded source remains auditable but must not be silently represented as current. Temporal warnings do not automatically change claim status, evidence eligibility, proposition status, routing, or Human Gates.`;
 
 export const ROUTER_INSTRUCTIONS = `${DOCTRINE}
 
@@ -116,7 +119,39 @@ function relevantProvenanceLedger(state, evidenceIds) {
   };
 }
 
-function compactState(state) {
+function relevantTemporalLedger(state, targetRefs) {
+  const targetKeys = new Set(targetRefs.map((item) => `${item.targetType}\u0000${item.targetId}`));
+  const relationships = (state.temporalLedger?.relationships || [])
+    .filter((item) => item.status === "ACTIVE");
+  const included = new Set();
+  let changed = true;
+  while (changed && included.size < 60) {
+    changed = false;
+    for (const relationship of relationships) {
+      if (included.size >= 60 || included.has(relationship.id)) continue;
+      const subject = `${relationship.subjectType}\u0000${relationship.subjectId}`;
+      const object = `${relationship.objectType}\u0000${relationship.objectId}`;
+      if (!targetKeys.has(subject) && !targetKeys.has(object)) continue;
+      included.add(relationship.id);
+      if (!targetKeys.has(subject)) {
+        targetKeys.add(subject);
+        changed = true;
+      }
+      if (!targetKeys.has(object)) {
+        targetKeys.add(object);
+        changed = true;
+      }
+    }
+  }
+  return {
+    version: state.temporalLedger?.version || 1,
+    assessments: (state.temporalLedger?.assessments || [])
+      .filter((item) => item.status === "ACTIVE" && targetKeys.has(`${item.targetType}\u0000${item.targetId}`)),
+    relationships: relationships.filter((item) => included.has(item.id)).slice(-60)
+  };
+}
+
+function compactState(state, { asOf = state.updatedAt } = {}) {
   const trustedNotebook = state.notebook.filter((entry) => entry.projectId === state.id && entry.contextStatus !== "LEGACY_UNVERIFIED");
   const lastCycleAt = [...trustedNotebook].reverse().find((entry) => entry.entryType === "CYCLE")?.timestamp || state.createdAt;
   const evidenceRegister = state.evidence.filter((item) => item.status === "ACTIVE" && item.evidenceAuthenticity !== "SYNTHETIC_SIMULATED");
@@ -130,9 +165,40 @@ function compactState(state) {
   });
   const relevantArtifactIds = new Set(provenanceLedger.artifacts.map((item) => item.id));
   const relevantRelationshipIds = new Set(provenanceLedger.relationships.map((item) => item.id));
+  const temporalTargetRefs = [
+    ...provenanceEvidenceIds.map((targetId) => ({ targetType: "EVIDENCE_ITEM", targetId })),
+    ...[...relevantArtifactIds].map((targetId) => ({ targetType: "PROVENANCE_ARTIFACT", targetId }))
+  ];
+  const temporalLedger = relevantTemporalLedger(state, temporalTargetRefs);
+  const temporalAnalysisTargetRefs = temporalLedger.assessments.map((item) => ({
+    targetType: item.targetType,
+    targetId: item.targetId
+  }));
+  for (const ref of [
+    ...temporalTargetRefs,
+    ...temporalLedger.relationships.flatMap((item) => [
+      { targetType: item.subjectType, targetId: item.subjectId },
+      { targetType: item.objectType, targetId: item.objectId }
+    ])
+  ]) {
+    if (!temporalAnalysisTargetRefs.some((item) =>
+      item.targetType === ref.targetType && item.targetId === ref.targetId
+    )) temporalAnalysisTargetRefs.push(ref);
+  }
+  const temporalAnalysis = analyzeTemporalIntegrity(temporalLedger, {
+    evidenceItems: state.evidence,
+    provenanceLedger: state.provenanceLedger,
+    targetRefs: temporalAnalysisTargetRefs,
+    asOf,
+    purpose: "CURRENT_STATE"
+  });
+  const relevantTemporalAssessmentIds = new Set(temporalLedger.assessments.map((item) => item.id));
+  const relevantTemporalRelationshipIds = new Set(temporalLedger.relationships.map((item) => item.id));
   const relevantStateEvents = (state.stateEvents || []).filter((event) =>
     (event.entityType !== "PROVENANCE_ARTIFACT" || relevantArtifactIds.has(event.entityId))
     && (event.entityType !== "PROVENANCE_RELATIONSHIP" || relevantRelationshipIds.has(event.entityId))
+    && (event.entityType !== "TEMPORAL_ASSESSMENT" || relevantTemporalAssessmentIds.has(event.entityId))
+    && (event.entityType !== "TEMPORAL_RELATIONSHIP" || relevantTemporalRelationshipIds.has(event.entityId))
   );
   const relevantStateEventIds = new Set(relevantStateEvents.map((event) => event.id));
   const relevantNotebook = trustedNotebook.filter((entry) =>
@@ -156,11 +222,22 @@ function compactState(state) {
     },
     provenanceLedger,
     provenanceAnalysis,
+    temporalIntegrity: {
+      analysisAsOf: asOf,
+      analysisAsOfSource: asOf === state.updatedAt ? "PROJECT_UPDATED_AT" : "EXPLICIT_CALLER_VALUE",
+      storedLedger: temporalLedger,
+      derivedAnalysis: temporalAnalysis,
+      interpretationWarning: "A source may be historically valid but not current; UNKNOWN is not CURRENT; corrected or superseded sources remain auditable."
+    },
     evidenceRegister: evidenceRegister.slice(-40),
     syntheticTestDataForTraceOnly: syntheticTestData.slice(-20),
     routedNonEvidenceIntake: state.evidence.filter((item) => item.status === "ROUTED").slice(-20),
     evidenceRegisterCount: evidenceRegister.length,
-    lockedDecisions: state.lockedDecisions.slice(-5).map(({ provenanceLedger: _provenanceLedger, ...lock }) => lock),
+    lockedDecisions: state.lockedDecisions.slice(-5).map(({
+      provenanceLedger: _provenanceLedger,
+      temporalLedger: _temporalLedger,
+      ...lock
+    }) => lock),
     questionRegistry: (state.questions || []).slice(-40),
     researchHistory: (state.researchHistory || []).slice(-10),
     openHumanGates: (state.humanGates || []).filter((item) => item.status === "OPEN"),
@@ -180,10 +257,10 @@ function compactState(state) {
   };
 }
 
-export function buildRoutingInput(state) {
-  return `Select the next reasoning route for this project state:\n${JSON.stringify(compactState(state), null, 2)}`;
+export function buildRoutingInput(state, options = {}) {
+  return `Select the next reasoning route for this project state:\n${JSON.stringify(compactState(state, options), null, 2)}`;
 }
 
-export function buildCycleInput(state, routing) {
-  return `Execute exactly one cycle with the selected route.\n\nROUTING DECISION\n${JSON.stringify(routing, null, 2)}\n\nPROJECT STATE\n${JSON.stringify(compactState(state), null, 2)}`;
+export function buildCycleInput(state, routing, options = {}) {
+  return `Execute exactly one cycle with the selected route.\n\nROUTING DECISION\n${JSON.stringify(routing, null, 2)}\n\nPROJECT STATE\n${JSON.stringify(compactState(state, options), null, 2)}`;
 }

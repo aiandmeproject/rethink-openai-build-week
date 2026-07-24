@@ -115,6 +115,45 @@ function renderProvenance(provenance) {
   <p class="meta">Chain counts are derived from explicit material lineage to FOUNDATIONAL artifacts. They are not stored conclusions and do not validate any proposition.</p>`;
 }
 
+function renderTemporalIntegrity(temporal) {
+  const summary = temporal?.summary || {};
+  const analysis = temporal?.analysis || {};
+  const assessments = Array.isArray(temporal?.assessments)
+    ? temporal.assessments.filter((item) => item.status === "ACTIVE")
+    : [];
+  const warnings = [
+    ...(analysis.intervalConflicts || []).map((item) => item.code),
+    ...(analysis.relationshipAssessmentConflicts || []).map((item) => item.code),
+    ...(analysis.unresolvedCorrectingSourceWarnings || []).map((item) => item.code),
+    ...(analysis.unresolvedSupersedingSourceWarnings || []).map((item) => item.code),
+    ...(analysis.temporalCycleWarnings || []).map((item) => item.code),
+    ...(temporal?.sourceChainAnalyses || []).flatMap((item) => item.warnings || []),
+    ...(temporal?.claimAnalyses || []).flatMap((item) => item.warnings || [])
+  ];
+  return `<div class="status-grid">
+    <div><span>Analysis as of</span><strong>${escapeHtml(temporal?.analysisAsOf || "Not recorded")}</strong></div>
+    <div><span>Analysis status</span><strong>${escapeHtml(readableEnum(analysis.status))}</strong></div>
+    <div><span>Active assessments</span><strong>${escapeHtml(summary.activeAssessmentCount ?? 0)}</strong></div>
+    <div><span>Unassessed active Evidence Items</span><strong>${escapeHtml(summary.unassessedActiveEvidenceCount ?? 0)}</strong></div>
+    <div><span>Current</span><strong>${escapeHtml(summary.currentCount ?? 0)}</strong></div>
+    <div><span>Historical</span><strong>${escapeHtml(summary.historicalCount ?? 0)}</strong></div>
+    <div><span>Outdated</span><strong>${escapeHtml(summary.outdatedCount ?? 0)}</strong></div>
+    <div><span>Corrected</span><strong>${escapeHtml(summary.correctedCount ?? 0)}</strong></div>
+    <div><span>Superseded</span><strong>${escapeHtml(summary.supersededCount ?? 0)}</strong></div>
+    <div><span>Unknown</span><strong>${escapeHtml(summary.unknownCount ?? 0)}</strong></div>
+    <div><span>Active corrections</span><strong>${escapeHtml(summary.correctionRelationshipCount ?? 0)}</strong></div>
+    <div><span>Active supersessions</span><strong>${escapeHtml(summary.supersessionRelationshipCount ?? 0)}</strong></div>
+  </div>
+  ${assessments.length ? `<h3>Active Temporal Assessments</h3><ul>${assessments.map((item) => {
+    const interval = item.effectiveFrom || item.effectiveTo
+      ? `${item.effectiveFrom || "open"} through ${item.effectiveTo || "open"}`
+      : "No effective interval recorded";
+    return `<li><strong>${escapeHtml(`${item.targetType}:${item.targetId}`)}</strong> — ${escapeHtml(readableEnum(item.temporalStatus))} as of ${escapeHtml(item.statusAsOf)}; ${escapeHtml(interval)}</li>`;
+  }).join("")}</ul>` : '<p class="empty">No explicit active Temporal Assessment is recorded.</p>'}
+  ${warnings.length ? `<p><strong>Temporal warnings:</strong> ${escapeHtml([...new Set(warnings)].join(", "))}</p>` : '<p class="empty">No temporal-integrity warning is present for the recorded assessments.</p>'}
+  <p class="meta">Temporal status is explicit and evaluated relative to the displayed as-of timestamp. A source may be historically valid but not current. Unknown is not current. Temporal analysis does not by itself prove or disprove a claim.</p>`;
+}
+
 function collectReferences(report) {
   const references = [];
   const seen = new Set();
@@ -186,6 +225,7 @@ export function renderProjectReportHtml(report) {
 <section><h2>Key Findings</h2>${renderList(report?.keyFindings, "No material finding has been established.")}</section>
 <section><h2>Core Claim Ledger</h2>${renderClaimLedger(report?.claimLedger)}</section>
 <section><h2>Evidence Lineage / Provenance</h2>${renderProvenance(report?.provenance)}</section>
+<section><h2>Temporal Integrity</h2>${renderTemporalIntegrity(report?.temporalIntegrity)}</section>
 <section><h2>Proposition Status</h2><div class="status-grid">
   <div><span>Proposition</span><strong>${escapeHtml(readableEnum(status.status))}</strong></div>
   <div><span>Validation process</span><strong>${escapeHtml(readableEnum(status.validationProcessStatus))}</strong></div>
