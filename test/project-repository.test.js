@@ -23,7 +23,8 @@ test("device-local repository persists and clears an isolated project session", 
     ...session.state,
     domainProfile: "BUSINESS",
     domainProfileVersion: "1.0.0",
-    claimLedger: { version: 1, claims: [], evidenceRelationships: [] }
+    claimLedger: { version: 1, claims: [], evidenceRelationships: [] },
+    provenanceLedger: { version: 1, artifacts: [], relationships: [] }
   });
   repository.clearSession();
   assert.equal(repository.loadSession(), null);
@@ -38,6 +39,7 @@ test("device-local repository migrates the legacy single-project key", () => {
   assert.equal(repository.loadSession().state.domainProfile, "BUSINESS");
   assert.equal(repository.loadSession().state.domainProfileVersion, "1.0.0");
   assert.deepEqual(repository.loadSession().state.claimLedger, { version: 1, claims: [], evidenceRelationships: [] });
+  assert.deepEqual(repository.loadSession().state.provenanceLedger, { version: 1, artifacts: [], relationships: [] });
   assert.equal(storage.has("rethink.project.v0.1"), false);
   assert.equal(storage.has("rethink.workspace.v0.1"), true);
 });
@@ -66,6 +68,34 @@ test("version 2 backup restores a complete project across independent browser or
         assessment: "Used to verify v2 portability.",
         assumptionIds: [],
         questionRefs: []
+      }
+    }
+  }).state;
+  const provenanceArtifactResult = runtime.manageState({
+    state,
+    operation: {
+      type: "UPSERT_PROVENANCE_ARTIFACT",
+      reason: "Portable provenance artifact coverage.",
+      item: {
+        title: "Portable foundational test record",
+        kind: "TEST",
+        originRole: "FOUNDATIONAL",
+        sourceLocator: "portable-record-1"
+      }
+    }
+  });
+  state = provenanceArtifactResult.state;
+  state = runtime.manageState({
+    state,
+    operation: {
+      type: "UPSERT_PROVENANCE_RELATIONSHIP",
+      reason: "Portable provenance relationship coverage.",
+      item: {
+        subjectType: "EVIDENCE_ITEM",
+        subjectId: state.evidence[0].id,
+        objectType: "PROVENANCE_ARTIFACT",
+        objectId: provenanceArtifactResult.artifact.id,
+        relationship: "DERIVED_FROM"
       }
     }
   }).state;
@@ -127,6 +157,9 @@ test("version 2 backup restores a complete project across independent browser or
   assert.deepEqual(restored.state.claimLedger, completed.state.claimLedger);
   assert.equal(restored.state.claimLedger.claims.length, 1);
   assert.equal(restored.state.claimLedger.evidenceRelationships.length, 1);
+  assert.deepEqual(restored.state.provenanceLedger, completed.state.provenanceLedger);
+  assert.equal(restored.state.provenanceLedger.artifacts.length, 1);
+  assert.equal(restored.state.provenanceLedger.relationships.length, 1);
   assert.deepEqual(restored.state.questions, completed.state.questions);
   assert.equal(restored.state.notebook.length, completed.state.notebook.length);
   assert.equal(restored.state.domainProfile, "BUSINESS");

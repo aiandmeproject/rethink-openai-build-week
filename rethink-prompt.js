@@ -1,5 +1,6 @@
 import { MODULE_IDS, modulePromptCatalog } from "./rethink-modules.js";
 import { domainProfilePromptContext } from "./rethink-domain-profiles.js";
+import { analyzeIndependentEvidenceChains } from "./rethink-provenance.js";
 
 const DOCTRINE = `Rethink is a routed reasoning architecture for managing uncertainty over the life of a problem.
 Its primary doctrine is: answer the unanswered question whose answer changes the greatest number of downstream decisions.
@@ -7,7 +8,9 @@ Do not optimize branches before validating the trunk.
 
 PROJECT-CONTEXT ISOLATION IS NON-NEGOTIABLE. Use only the active project's original input, structured state, Claim Ledger, evidence, locks, authorized imports, and notebook entries whose projectId matches the active project. Never introduce terminology, claims, constraints, assumptions, or conclusions from another project, a demo, a template, memory, or prior conversation. Echo the active state.id exactly as projectId in structured output.
 
-CLAIM SEMANTICS ARE EXPLICIT. A claim is an assertion to evaluate; an assumption is a hypothesis the project currently relies on; evidence is an observation or finding that may bear on one or more claims. Keep these records distinct. Claim status and each SUPPORTS, CONTRADICTS, or LIMITS relationship are persisted human-auditable state. Never infer or change claim status merely by counting relationships, never treat relationship count as independent evidence-chain count, and never confuse a Claim Ledger status with the separate cycle-level proposition status.`;
+CLAIM SEMANTICS ARE EXPLICIT. A claim is an assertion to evaluate; an assumption is a hypothesis the project currently relies on; evidence is an observation or finding that may bear on one or more claims. Keep these records distinct. Claim status and each SUPPORTS, CONTRADICTS, or LIMITS relationship are persisted human-auditable state. Never infer or change claim status merely by counting relationships, never treat relationship count as independent evidence-chain count, and never confuse a Claim Ledger status with the separate cycle-level proposition status.
+
+PROVENANCE SEMANTICS ARE EXPLICIT. Evidence Lineage uses typed, directed relationships from a subject/child to an object/parent or referenced origin. DERIVED_FROM, SUMMARIZES, SYNDICATES, and REANALYZES are material dependencies that collapse to explicitly FOUNDATIONAL roots. CITES and REPLICATES do not by themselves prove derivation or independence. Unknown, missing, partial, or citation-only lineage remains unresolved; never infer independence from titles, URLs, publishers, authors, wording, or record counts. Synthetic or simulated lineage may remain traceable but is excluded from eligible real-world independent-chain counts.`;
 
 export const ROUTER_INSTRUCTIONS = `${DOCTRINE}
 
@@ -78,11 +81,63 @@ Return the smallest complete JSON object that satisfies the schema and can be sa
 - Preserve supporting and disconfirming search, citations, limitations, population/applicability, source quality, and confidence-update rationale.
 - Use native citation annotations and structured Evidence Items for source detail. Defer full narrative synthesis to the later project report.`;
 
+function relevantProvenanceLedger(state, evidenceIds) {
+  const activeRelationships = (state.provenanceLedger?.relationships || []).filter((item) => item.status === "ACTIVE");
+  const reachable = new Set(evidenceIds.map((id) => `EVIDENCE_ITEM\u0000${id}`));
+  const includedIds = [];
+  const included = new Set();
+  let changed = true;
+  while (changed && includedIds.length < 80) {
+    changed = false;
+    for (const relationship of activeRelationships) {
+      if (includedIds.length >= 80) break;
+      const subject = `${relationship.subjectType}\u0000${relationship.subjectId}`;
+      if (!reachable.has(subject) || included.has(relationship.id)) continue;
+      included.add(relationship.id);
+      includedIds.push(relationship.id);
+      const object = `${relationship.objectType}\u0000${relationship.objectId}`;
+      if (!reachable.has(object)) {
+        reachable.add(object);
+        changed = true;
+      }
+    }
+  }
+  const relationshipById = new Map(activeRelationships.map((item) => [item.id, item]));
+  const relationships = includedIds.map((id) => relationshipById.get(id));
+  const artifactIds = new Set(
+    [...reachable]
+      .filter((key) => key.startsWith("PROVENANCE_ARTIFACT\u0000"))
+      .map((key) => key.split("\u0000")[1])
+  );
+  return {
+    version: state.provenanceLedger?.version || 1,
+    artifacts: (state.provenanceLedger?.artifacts || []).filter((item) => artifactIds.has(item.id)).slice(-40),
+    relationships
+  };
+}
+
 function compactState(state) {
   const trustedNotebook = state.notebook.filter((entry) => entry.projectId === state.id && entry.contextStatus !== "LEGACY_UNVERIFIED");
   const lastCycleAt = [...trustedNotebook].reverse().find((entry) => entry.entryType === "CYCLE")?.timestamp || state.createdAt;
   const evidenceRegister = state.evidence.filter((item) => item.status === "ACTIVE" && item.evidenceAuthenticity !== "SYNTHETIC_SIMULATED");
   const syntheticTestData = state.evidence.filter((item) => item.status === "ACTIVE" && item.evidenceAuthenticity === "SYNTHETIC_SIMULATED");
+  const provenanceEvidenceIds = [...evidenceRegister, ...syntheticTestData].map((item) => item.id);
+  const provenanceLedger = relevantProvenanceLedger(state, provenanceEvidenceIds);
+  const provenanceAnalysis = analyzeIndependentEvidenceChains(provenanceLedger, {
+    evidenceItems: state.evidence,
+    evidenceIds: provenanceEvidenceIds,
+    eligibleEvidenceIds: evidenceRegister.map((item) => item.id)
+  });
+  const relevantArtifactIds = new Set(provenanceLedger.artifacts.map((item) => item.id));
+  const relevantRelationshipIds = new Set(provenanceLedger.relationships.map((item) => item.id));
+  const relevantStateEvents = (state.stateEvents || []).filter((event) =>
+    (event.entityType !== "PROVENANCE_ARTIFACT" || relevantArtifactIds.has(event.entityId))
+    && (event.entityType !== "PROVENANCE_RELATIONSHIP" || relevantRelationshipIds.has(event.entityId))
+  );
+  const relevantStateEventIds = new Set(relevantStateEvents.map((event) => event.id));
+  const relevantNotebook = trustedNotebook.filter((entry) =>
+    !entry.stateEventId || relevantStateEventIds.has(entry.stateEventId)
+  );
   return {
     id: state.id,
     projectContextBoundary: `Use only records carrying projectId ${state.id} or contained directly in this state object.`,
@@ -99,19 +154,21 @@ function compactState(state) {
         .filter((item) => item.status === "ACTIVE")
         .slice(-60)
     },
+    provenanceLedger,
+    provenanceAnalysis,
     evidenceRegister: evidenceRegister.slice(-40),
     syntheticTestDataForTraceOnly: syntheticTestData.slice(-20),
     routedNonEvidenceIntake: state.evidence.filter((item) => item.status === "ROUTED").slice(-20),
     evidenceRegisterCount: evidenceRegister.length,
-    lockedDecisions: state.lockedDecisions.slice(-5),
+    lockedDecisions: state.lockedDecisions.slice(-5).map(({ provenanceLedger: _provenanceLedger, ...lock }) => lock),
     questionRegistry: (state.questions || []).slice(-40),
     researchHistory: (state.researchHistory || []).slice(-10),
     openHumanGates: (state.humanGates || []).filter((item) => item.status === "OPEN"),
     humanDecisions: (state.humanDecisions || []).slice(-8),
     stageOverrides: (state.stageOverrides || []).slice(-8),
-    manualStateChangesSincePreviousCycle: (state.stateEvents || []).filter((event) => event.timestamp > lastCycleAt).slice(-20),
+    manualStateChangesSincePreviousCycle: relevantStateEvents.filter((event) => event.timestamp > lastCycleAt).slice(-20),
     tangents: state.tangents.slice(-8),
-    recentNotebook: trustedNotebook.slice(-8).map((entry) => ({
+    recentNotebook: relevantNotebook.slice(-8).map((entry) => ({
       cycle: entry.cycle,
       projectId: entry.projectId,
       question: entry.highestLeverageQuestion,

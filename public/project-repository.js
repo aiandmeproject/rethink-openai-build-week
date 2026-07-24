@@ -4,6 +4,7 @@ const DEFAULT_KEY = "rethink.workspace.v0.1";
 const LEGACY_KEY = "rethink.project.v0.1";
 const LEGACY_DOMAIN_PROFILE = Object.freeze({ id: "BUSINESS", version: "1.0.0" });
 const EMPTY_CLAIM_LEDGER = Object.freeze({ version: 1, claims: [], evidenceRelationships: [] });
+const EMPTY_PROVENANCE_LEDGER = Object.freeze({ version: 1, artifacts: [], relationships: [] });
 
 export function hydrateLocalProjectSession(session) {
   if (!session?.state?.id) return null;
@@ -17,6 +18,11 @@ export function hydrateLocalProjectSession(session) {
         ...EMPTY_CLAIM_LEDGER,
         claims: [],
         evidenceRelationships: []
+      },
+      provenanceLedger: session.state.provenanceLedger ?? {
+        ...EMPTY_PROVENANCE_LEDGER,
+        artifacts: [],
+        relationships: []
       }
     }
   };

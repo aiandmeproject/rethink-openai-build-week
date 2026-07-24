@@ -578,6 +578,12 @@ export function validateProjectState(state) {
       throw new ValidationError("state.claimLedger must contain an integer version plus claims and evidenceRelationships arrays.");
     }
   }
+  if (state.provenanceLedger != null) {
+    requireObject(state.provenanceLedger, "state.provenanceLedger");
+    if (!Number.isInteger(state.provenanceLedger.version) || !Array.isArray(state.provenanceLedger.artifacts) || !Array.isArray(state.provenanceLedger.relationships)) {
+      throw new ValidationError("state.provenanceLedger must contain an integer version plus artifacts and relationships arrays.");
+    }
+  }
   for (const field of ["humanGates", "humanDecisions", "stageOverrides", "questions", "researchHistory"]) {
     if (state[field] != null && !Array.isArray(state[field])) {
       throw new ValidationError(`state.${field} must be an array when present.`);

@@ -35,6 +35,16 @@ import {
   upsertClaim as upsertClaimRecord,
   upsertClaimEvidenceRelationship as upsertClaimEvidenceRelationshipRecord
 } from "./rethink-claims.js";
+import {
+  MATERIAL_DEPENDENCY_RELATIONSHIPS,
+  analyzeClaimIndependentEvidenceChains,
+  analyzeIndependentEvidenceChains,
+  createEmptyProvenanceLedger,
+  normalizeProvenanceLedger,
+  removeProvenanceRelationship as removeProvenanceRelationshipRecord,
+  upsertProvenanceArtifact as upsertProvenanceArtifactRecord,
+  upsertProvenanceRelationship as upsertProvenanceRelationshipRecord
+} from "./rethink-provenance.js";
 
 const SAMPLE_PATTERN = /florida[\s\S]*disabled veterans|disabled veterans[\s\S]*florida/i;
 
@@ -185,6 +195,7 @@ export function initializeProject(input, {
     assumptions: initialAssumptions(cleanInput, now),
     evidence: [],
     claimLedger: createEmptyClaimLedger(),
+    provenanceLedger: createEmptyProvenanceLedger(),
     lockedDecisions: [],
     tangents: [],
     notebook: [],
@@ -299,11 +310,18 @@ export function projectProgressSignature(state) {
     .filter((item) => item.status === "ACTIVE")
     .map((item) => `${item.id}:${item.claimId}:${item.evidenceId}:${item.relationship}:${item.updatedAt}`)
     .sort();
+  const provenanceArtifacts = (state.provenanceLedger?.artifacts || [])
+    .map((item) => `${item.id}:${item.kind}:${item.originRole}:${item.updatedAt}`)
+    .sort();
+  const provenanceRelationships = (state.provenanceLedger?.relationships || [])
+    .filter((item) => item.status === "ACTIVE")
+    .map((item) => `${item.id}:${item.subjectType}:${item.subjectId}:${item.objectType}:${item.objectId}:${item.relationship}:${item.updatedAt}`)
+    .sort();
   const locks = (state.lockedDecisions || []).map((item) => `${item.id}:${item.status || "ACTIVE"}`).sort();
   const gates = (state.humanGates || []).map((item) => `${item.id}:${item.status}`).sort();
   const decisions = (state.humanDecisions || []).map((item) => `${item.id}:${item.humanDisposition}`).sort();
   const stages = (state.stageOverrides || []).map((item) => `${item.id}:${item.action}:${item.targetPecPhase}:${item.forcedMethod || ""}`).sort();
-  return JSON.stringify({ assumptions, evidence, claims, claimEvidenceRelationships, locks, gates, decisions, stages, phase: state.pecPhase?.id, lifecycleStatus: state.lifecycleStatus, currentDisposition: state.currentDisposition });
+  return JSON.stringify({ assumptions, evidence, claims, claimEvidenceRelationships, provenanceArtifacts, provenanceRelationships, locks, gates, decisions, stages, phase: state.pecPhase?.id, lifecycleStatus: state.lifecycleStatus, currentDisposition: state.currentDisposition });
 }
 
 function trustedCycleEntries(state) {
@@ -936,6 +954,9 @@ export function normalizeProjectState(state) {
       .filter((item) => item.status === "ACTIVE" && ACTUAL_EVIDENCE_TYPES.includes(item.intakeType))
       .map((item) => item.id)
   });
+  normalized.provenanceLedger = normalizeProvenanceLedger(normalized.provenanceLedger, {
+    evidenceIds: normalized.evidence.map((item) => item.id)
+  });
   const existingQuestions = Array.isArray(normalized.questions) ? normalized.questions : [];
   const questionTexts = [
     ...existingQuestions.map((item) => item.text),
@@ -1007,6 +1028,7 @@ export function createNotebookExport(state, { now = new Date() } = {}) {
     evidence: cloneValue(normalized.evidence),
     assumptions: cloneValue(normalized.assumptions),
     claimLedger: cloneValue(normalized.claimLedger),
+    provenanceLedger: cloneValue(normalized.provenanceLedger),
     lockedVersions: cloneValue(normalized.lockedDecisions)
   };
 }
@@ -1345,6 +1367,7 @@ export function lockProjectState(state, { note = "", now = new Date() } = {}) {
     assumptions: state.assumptions.map((assumption) => cloneValue(assumption)),
     evidence: state.evidence.map((evidence) => cloneValue(evidence)),
     claimLedger: cloneValue(state.claimLedger),
+    provenanceLedger: cloneValue(state.provenanceLedger),
     highestLeverageQuestion: latestTrustedCycle?.highestLeverageQuestion || "",
     reopeningTrigger: "",
     reopeningReason: "",
@@ -2306,6 +2329,86 @@ function removeProjectClaimEvidenceRelationship(state, operation, at) {
   };
 }
 
+function upsertProjectProvenanceArtifact(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = upsertProvenanceArtifactRecord(state.provenanceLedger, operation.item || {}, { now: at });
+  const event = {
+    id: makeId("event", at),
+    entityType: "PROVENANCE_ARTIFACT",
+    entityId: result.artifact.id,
+    action: result.action,
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `${result.action === "CREATED" ? "Added" : "Updated"} provenance artifact: ${result.artifact.title}`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.artifact)
+  };
+  return {
+    ...finishStateEdit({ ...state, provenanceLedger: result.ledger }, event, at),
+    artifact: result.artifact
+  };
+}
+
+function upsertProjectProvenanceRelationship(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = upsertProvenanceRelationshipRecord(state.provenanceLedger, operation.item || {}, {
+    now: at,
+    evidenceIds: state.evidence.map((item) => item.id)
+  });
+  if (result.unchanged) {
+    return {
+      state,
+      event: null,
+      notebookEntry: null,
+      relationship: result.relationship,
+      unchanged: true
+    };
+  }
+  const event = {
+    id: makeId("event", at),
+    entityType: "PROVENANCE_RELATIONSHIP",
+    entityId: result.relationship.id,
+    action: result.action === "CREATED" ? "LINKED" : "UPDATED",
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `${result.action === "CREATED" ? "Linked" : "Updated"} ${result.relationship.subjectType.toLowerCase()} ${result.relationship.subjectId} ${result.relationship.relationship.toLowerCase().replaceAll("_", " ")} ${result.relationship.objectType.toLowerCase()} ${result.relationship.objectId}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.relationship)
+  };
+  return {
+    ...finishStateEdit({ ...state, provenanceLedger: result.ledger }, event, at),
+    relationship: result.relationship,
+    unchanged: false
+  };
+}
+
+function removeProjectProvenanceRelationship(state, operation, at) {
+  const reason = requiredReason(operation.reason);
+  const result = removeProvenanceRelationshipRecord(state.provenanceLedger, operation.id, {
+    reason,
+    now: at,
+    evidenceIds: state.evidence.map((item) => item.id)
+  });
+  const event = {
+    id: makeId("event", at),
+    entityType: "PROVENANCE_RELATIONSHIP",
+    entityId: result.relationship.id,
+    action: "UNLINKED",
+    timestamp: timestamp(at),
+    cycle: state.cycle,
+    summary: `Retired the ${result.relationship.relationship.toLowerCase().replaceAll("_", " ")} provenance relationship ${result.relationship.id}.`,
+    reason,
+    before: result.before,
+    after: cloneValue(result.relationship)
+  };
+  return {
+    ...finishStateEdit({ ...state, provenanceLedger: result.ledger }, event, at),
+    relationship: result.relationship
+  };
+}
+
 export function manageProjectState(state, operation, { now = new Date() } = {}) {
   state = normalizeProjectState(state);
   if (!operation || typeof operation !== "object") {
@@ -2319,6 +2422,9 @@ export function manageProjectState(state, operation, { now = new Date() } = {}) 
     case "UPSERT_CLAIM": return upsertProjectClaim(state, operation, now);
     case "UPSERT_CLAIM_EVIDENCE_RELATIONSHIP": return upsertProjectClaimEvidenceRelationship(state, operation, now);
     case "REMOVE_CLAIM_EVIDENCE_RELATIONSHIP": return removeProjectClaimEvidenceRelationship(state, operation, now);
+    case "UPSERT_PROVENANCE_ARTIFACT": return upsertProjectProvenanceArtifact(state, operation, now);
+    case "UPSERT_PROVENANCE_RELATIONSHIP": return upsertProjectProvenanceRelationship(state, operation, now);
+    case "REMOVE_PROVENANCE_RELATIONSHIP": return removeProjectProvenanceRelationship(state, operation, now);
     case "REOPEN_LOCK": return reopenLock(state, operation, now);
     case "RESOLVE_HUMAN_GATE": return resolveHumanGate(state, operation, now);
     case "OVERRIDE_DISPOSITION": return overrideDisposition(state, operation, now);
@@ -2370,6 +2476,47 @@ function reportEvidenceItem(item, { synthetic = false } = {}) {
     assessment: item.assessment,
     questionRefs: item.questionRefs || [],
     assumptionIds: item.assumptionIds || []
+  };
+}
+
+function createProvenanceReport(state) {
+  const linkableEvidenceIds = linkableClaimEvidenceIds(state);
+  const eligibleEvidenceIds = actualEvidence(state).map((item) => item.id);
+  const analysis = analyzeIndependentEvidenceChains(state.provenanceLedger, {
+    evidenceItems: state.evidence,
+    evidenceIds: linkableEvidenceIds,
+    eligibleEvidenceIds
+  });
+  const claimAnalyses = state.claimLedger.claims.map((claim) =>
+    analyzeClaimIndependentEvidenceChains({
+      provenanceLedger: state.provenanceLedger,
+      claimLedger: state.claimLedger,
+      evidenceItems: state.evidence,
+      claimId: claim.id,
+      linkableEvidenceIds,
+      eligibleEvidenceIds
+    })
+  );
+  return {
+    version: state.provenanceLedger.version,
+    interpretationPolicy: "EXPLICIT_LINEAGE_ONLY_NO_SOURCE_INDEPENDENCE_INFERENCE",
+    relationshipDirection: "SUBJECT_CHILD_TO_OBJECT_PARENT_OR_REFERENCED_ORIGIN",
+    artifacts: state.provenanceLedger.artifacts.map((item) => cloneValue(item)),
+    relationships: state.provenanceLedger.relationships.map((item) => cloneValue(item)),
+    analysis,
+    claimAnalyses,
+    summary: {
+      artifactCount: state.provenanceLedger.artifacts.length,
+      evidenceAnalyzedCount: analysis.evidenceMappings.length,
+      knownIndependentChainCount: analysis.knownIndependentChainCount,
+      unresolvedEvidenceCount: analysis.unresolvedEvidenceIds.length,
+      derivativeArtifactCount: state.provenanceLedger.artifacts.filter((item) => item.originRole === "DERIVATIVE").length,
+      derivativeRelationshipCount: state.provenanceLedger.relationships.filter((item) =>
+        item.status === "ACTIVE" && MATERIAL_DEPENDENCY_RELATIONSHIPS.includes(item.relationship)
+      ).length,
+      citationCycleCount: analysis.citationCycleWarnings.length,
+      syntheticOrOtherwiseIneligibleEvidenceCount: analysis.ineligibleForRealWorldValidationEvidenceIds.length
+    }
   };
 }
 
@@ -2439,6 +2586,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
       };
     })
   };
+  const provenanceReport = createProvenanceReport(state);
   const propositionStatus = evidence.length === 0
     ? "INSUFFICIENT_EVIDENCE"
     : (evaluation?.propositionStatus || "UNRESOLVED");
@@ -2459,6 +2607,7 @@ export function createProjectReport(state, { now = new Date() } = {}) {
       : `Rethink evaluated ${evidence.length} observed evidence item${evidence.length === 1 ? "" : "s"}. The current proposition status is ${propositionStatus.replaceAll("_", " ").toLowerCase()}, and the current disposition is ${disposition.replaceAll("_", " ").toLowerCase()}.`,
     problemDefinition: state.problemDefinition,
     claimLedger: claimLedgerReport,
+    provenance: provenanceReport,
     currentDisposition: {
       systemRecommendation: lastCycle?.disposition || state.currentDisposition,
       humanDisposition: latestHumanDecision?.humanDisposition || "",
@@ -2537,7 +2686,13 @@ export function createProjectReport(state, { now = new Date() } = {}) {
       ...cycles.flatMap((entry) => entry.limitations || []),
       ...(evaluation?.disconfirmation?.flag === "DISCONFIRMATION_SEARCH_INCOMPLETE" ? ["A documented attempt to find disconfirming evidence is incomplete."] : []),
       ...(poorApplicability.length ? ["Some evidence has unknown, broad, or poorly matched population applicability."] : []),
-      ...(syntheticOrSimulated.length ? ["Synthetic or simulated test results remain traceable but are excluded from real-world proposition validation."] : [])
+      ...(syntheticOrSimulated.length ? ["Synthetic or simulated test results remain traceable but are excluded from real-world proposition validation."] : []),
+      ...(provenanceReport.summary.unresolvedEvidenceCount
+        ? [`${provenanceReport.summary.unresolvedEvidenceCount} active evidence item${provenanceReport.summary.unresolvedEvidenceCount === 1 ? " has" : "s have"} unresolved or partial provenance and is not treated as a known independent source chain.`]
+        : []),
+      ...(provenanceReport.summary.citationCycleCount
+        ? ["One or more citation cycles are preserved as warnings and do not establish material derivation or source independence."]
+        : [])
     ]),
     humanDecisionsAndOverrides: state.humanDecisions.map((item) => cloneValue(item)),
     recommendedNextAction: {
